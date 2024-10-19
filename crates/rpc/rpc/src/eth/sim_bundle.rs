@@ -1,14 +1,45 @@
 //! `Eth` Sim bundle implementation and helpers.
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
-use alloy_rpc_types_mev::{SendBundleRequest, SimBundleOverrides, SimBundleResponse};
+use alloy_eips::BlockNumberOrTag;
+use alloy_primitives::U256;
+use alloy_rpc_types::{calc_excess_blob_gas, BlockId};
+use alloy_rpc_types_mev::{
+    BundleItem, SendBundleRequest, SimBundleLogs, SimBundleOverrides, SimBundleResponse, Validity,
+};
+use alloy_signer::Signer;
 use jsonrpsee::core::RpcResult;
+use reth_chainspec::EthChainSpec;
+use reth_evm::{ConfigureEvm, ConfigureEvmEnv};
+use reth_primitives::revm_primitives::db::{DatabaseCommit, DatabaseRef};
+use reth_provider::{ChainSpecProvider, HeaderProvider};
+use reth_revm::database::StateProviderDatabase;
 use reth_rpc_api::MevSimApiServer;
-use reth_rpc_eth_api::helpers::{Call, EthTransactions, LoadPendingBlock};
-use reth_rpc_eth_types::EthApiError;
+use reth_rpc_eth_api::{
+    helpers::{Call, EthTransactions, LoadPendingBlock},
+    FromEthApiError,
+};
+use reth_rpc_eth_types::{utils::recover_raw_transaction, EthApiError};
 use reth_tasks::pool::BlockingTaskGuard;
+use revm::{
+    db::CacheDB,
+    primitives::{
+        BlockEnv, CfgEnvWithHandlerCfg, EnvWithHandlerCfg, ResultAndState, SpecId, TxEnv,
+    },
+};
 use tracing::info;
+
+/// Maximum bundle depth
+const MAX_NESTED_BUNDLE_DEPTH: usize = 5;
+
+/// Maximum body size
+const MAX_BUNDLE_BODY_SIZE: usize = 50;
+/// Default simulation timeout
+const DEFAULT_SIM_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Maximum simulation timeout
+const MAX_SIM_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// `Eth` sim bundle implementation.
 pub struct EthSimBundle<Eth> {
@@ -27,14 +58,200 @@ impl<Eth> EthSimBundle<Eth>
 where
     Eth: EthTransactions + LoadPendingBlock + Call + 'static,
 {
-    /// Simulates a bundle of transactions.
-    pub async fn sim_bundle(
+    // Helper function to calculate the depth of nested bundles
+    fn calculate_bundle_depth(&self, bundle: &SendBundleRequest, current_depth: usize) -> usize {
+        // If current depth exceeds the maximum, return immediately
+        if current_depth > MAX_NESTED_BUNDLE_DEPTH {
+            return current_depth;
+        }
+
+        let mut max_depth = current_depth;
+
+        // Iterate over each item in the bundle body and check if it's a nested bundle
+        for item in &bundle.bundle_body {
+            if let BundleItem::Bundle { bundle: nested_bundle } = item {
+                // Recursively calculate depth for nested bundles
+                let nested_depth = self.calculate_bundle_depth(nested_bundle, current_depth + 1);
+                if nested_depth > max_depth {
+                    max_depth = nested_depth;
+                }
+            }
+        }
+
+        max_depth
+    }
+    async fn sim_nested_bundle(
         &self,
         request: SendBundleRequest,
-        overrides: SimBundleOverrides,
-    ) -> RpcResult<SimBundleResponse> {
-        info!("mev_simBundle called, request: {:?}, overrides: {:?}", request, overrides);
-        Err(EthApiError::Unsupported("mev_simBundle is not supported").into())
+        block_env: BlockEnv,
+        cfg: CfgEnvWithHandlerCfg,
+        logs: bool,
+    ) -> Result<SimBundleResponse, Eth::Error> {
+        let SendBundleRequest { bundle_body, inclusion, validity, .. } = request;
+
+        let current_block = block_env.number.saturating_to::<u64>();
+
+        if current_block < inclusion.block || current_block > inclusion.max_block.unwrap_or(0) {
+            todo!("return error")
+        }
+
+        let mut total_gas_used = 0;
+        let body_logs: Vec<SimBundleLogs> = Vec::new();
+        let mut total_profit = U256::ZERO;
+
+        // Extract constraints into convinient format
+        let mut refund_idx = vec![false; bundle_body.len()];
+        let mut refund_percents = vec![0; bundle_body.len()];
+
+        let Validity { refund, .. } = validity.unwrap();
+
+        for el in refund.unwrap() {
+            refund_idx[el.body_idx as usize] = true;
+            refund_percents[el.body_idx as usize] = el.percent;
+        }
+
+        let mut sim_result: Option<SimBundleResponse> = None;
+
+        for (i, el) in bundle_body.iter().enumerate() {
+            let el = el.clone();
+            let coinbase_diff = U256::ZERO;
+            let mut body_logs = body_logs.clone();
+            sim_result = Some(match el {
+                BundleItem::Tx { tx, can_revert } => {
+                    let eth_api = self.inner.eth_api.clone();
+                    let block_env_closure = block_env.clone();
+                    let cfg_closure = cfg.clone();
+                    let recovered_tx = recover_raw_transaction(tx.clone()).unwrap();
+                    let (tx, signer) = recovered_tx.into_components();
+                    let tx = tx.into_transaction();
+                    let sim_result = self
+                        .inner
+                        .eth_api
+                        .spawn_with_state_at_block(
+                            BlockId::Number(current_block.into()),
+                            move |state| {
+                                let coinbase = block_env_closure.coinbase;
+                                let env = EnvWithHandlerCfg::new_with_cfg_env(
+                                    cfg_closure,
+                                    block_env_closure,
+                                    TxEnv::default(),
+                                );
+                                let db = CacheDB::new(StateProviderDatabase::new(state));
+
+                                let initial_coinbase = DatabaseRef::basic_ref(&db, coinbase)
+                                    .map_err(Eth::Error::from_eth_err)?
+                                    .map(|acc| acc.balance)
+                                    .unwrap_or_default();
+                                info!("initial_coinbase: {:?}", initial_coinbase);
+                                let coinbase_balance_before_tx = initial_coinbase;
+
+                                let mut evm = Call::evm_config(&eth_api).evm_with_env(db, env);
+
+                                Call::evm_config(&eth_api).fill_tx_env(evm.tx_mut(), &tx, signer);
+                                let ResultAndState { result, state } =
+                                    evm.transact().map_err(Eth::Error::from_eth_err)?;
+
+                                if !result.is_success() && !can_revert {
+                                    return Ok(SimBundleResponse {
+                                        success: false,
+                                        state_block: current_block,
+                                        error: Some("Transaction reverted".to_string()),
+                                        logs: Some(body_logs),
+                                        gas_used: total_gas_used,
+                                        mev_gas_price: U256::ZERO,
+                                        profit: U256::ZERO,
+                                        refundable_value: U256::ZERO,
+                                        exec_error: None,
+                                        revert: None,
+                                    });
+                                }
+
+                                let gas_used = result.gas_used();
+                                total_gas_used += gas_used;
+
+                                if logs {
+                                    let sim_bundle_logs = SimBundleLogs {
+                                        tx_logs: Some(result.logs().to_vec()),
+                                        bundle_logs: None,
+                                    };
+                                    body_logs.push(sim_bundle_logs);
+                                }
+
+                                // coinbase is always present in the result state
+                                let coinbase_balance_after_tx = state
+                                    .get(&coinbase)
+                                    .map(|acc| acc.info.balance)
+                                    .unwrap_or_default();
+                                let coinbase_diff = coinbase_balance_after_tx
+                                    .saturating_sub(coinbase_balance_before_tx);
+                                info!("coinbase_diff: {:?}", coinbase_diff);
+
+                                total_profit += coinbase_diff;
+
+                                evm.context.evm.db.commit(state);
+
+                                let sim_result = SimBundleResponse {
+                                    success: true,
+                                    state_block: current_block,
+                                    error: None,
+                                    logs: Some(body_logs),
+                                    gas_used: total_gas_used,
+                                    mev_gas_price: U256::ZERO,
+                                    profit: total_profit,
+                                    refundable_value: U256::ZERO,
+                                    exec_error: None,
+                                    revert: None,
+                                };
+                                Ok(sim_result)
+                            },
+                        )
+                        .await?;
+                    sim_result
+                }
+                BundleItem::Hash { hash } => {
+                    info!("Skipping hash-only bundle item: {:?}", hash);
+                    return Err(Eth::Error::from_eth_err(EthApiError::InvalidBundle));
+                }
+                BundleItem::Bundle { bundle } => {
+                    info!("Applying bundle: {:?}", bundle);
+                    let inner_res = self
+                        .sim_nested_bundle(bundle.clone(), block_env.clone(), cfg.clone(), logs)
+                        .await?;
+
+                    total_gas_used += inner_res.gas_used;
+                    if logs {
+                        let inner_logs = SimBundleLogs {
+                            tx_logs: None,
+                            bundle_logs: Some(inner_res.logs.expect("logs should be Some")),
+                        };
+                        body_logs.push(inner_logs);
+                    }
+                    let sim_result = SimBundleResponse {
+                        success: inner_res.success,
+                        state_block: inner_res.state_block,
+                        error: inner_res.error,
+                        logs: Some(body_logs),
+                        gas_used: total_gas_used,
+                        mev_gas_price: inner_res.mev_gas_price,
+                        profit: total_profit,
+                        refundable_value: inner_res.refundable_value,
+                        exec_error: inner_res.exec_error,
+                        revert: inner_res.revert,
+                    };
+                    sim_result
+                }
+            });
+            // TODO: implement refund logic here
+            // estimate payout value and subtract from total profit
+            if let Some(ref mut result) = sim_result {
+                // implement refund logic here
+                if !refund_idx[i] {
+                    result.refundable_value += coinbase_diff;
+                }
+            }
+        }
+
+        sim_result.ok_or(Eth::Error::from_eth_err(EthApiError::InvalidBundle))
     }
 }
 
@@ -48,7 +265,81 @@ where
         request: SendBundleRequest,
         overrides: SimBundleOverrides,
     ) -> RpcResult<SimBundleResponse> {
-        Self::sim_bundle(self, request, overrides).await
+        info!("mev_simBundle called, request: {:?}, overrides: {:?}", request, overrides);
+
+        let bundle_depth = self.calculate_bundle_depth(&request, 0);
+        if bundle_depth > MAX_NESTED_BUNDLE_DEPTH {
+            return Err(EthApiError::InvalidBundle.into());
+        }
+
+        let bundle_body_size = request.bundle_body.len();
+        if bundle_body_size > MAX_BUNDLE_BODY_SIZE {
+            return Err(EthApiError::InvalidBundle.into());
+        }
+
+        let SimBundleOverrides {
+            parent_block,
+            block_number,
+            coinbase,
+            timestamp,
+            gas_limit,
+            base_fee,
+            ..
+        } = overrides;
+
+        let block_id = parent_block.unwrap_or(BlockId::Number(BlockNumberOrTag::Latest));
+
+        let (cfg, mut block_env, ..) =
+            self.inner.eth_api.evm_env_at(block_id).await.map_err(Into::into)?;
+
+        let parent_header = LoadPendingBlock::provider(&self.inner.eth_api)
+            .header_by_number(block_env.number.saturating_to::<u64>())
+            .map_err(|e| EthApiError::from_eth_err(e))? // Explicitly map the error
+            .ok_or_else(|| {
+                EthApiError::HeaderNotFound((block_env.number.saturating_to::<u64>()).into())
+            })?;
+
+        // apply overrides
+        if let Some(block_number) = block_number {
+            block_env.number = U256::from(block_number);
+        }
+
+        if let Some(coinbase) = coinbase {
+            block_env.coinbase = coinbase;
+        }
+
+        if let Some(timestamp) = timestamp {
+            block_env.timestamp = U256::from(timestamp);
+        }
+
+        if let Some(gas_limit) = gas_limit {
+            block_env.gas_limit = U256::from(gas_limit);
+        }
+
+        if let Some(base_fee) = base_fee {
+            block_env.basefee = U256::from(base_fee);
+        } else if cfg.handler_cfg.spec_id.is_enabled_in(SpecId::LONDON) {
+            if let Some(base_fee) = parent_header.next_block_base_fee(
+                LoadPendingBlock::provider(&self.inner.eth_api)
+                    .chain_spec()
+                    .base_fee_params_at_block(block_env.number.saturating_to::<u64>()),
+            ) {
+                block_env.basefee = U256::from(base_fee);
+            }
+        }
+
+        if cfg.handler_cfg.spec_id.is_enabled_in(SpecId::CANCUN) {
+            let excess_blob_gas = calc_excess_blob_gas(
+                parent_header.excess_blob_gas.unwrap_or_default().try_into().unwrap(),
+                parent_header.blob_gas_used.unwrap_or_default().try_into().unwrap(),
+            );
+
+            block_env.set_blob_excess_gas_and_price(excess_blob_gas);
+        }
+
+        let bundle_res = self.sim_nested_bundle(request, block_env, cfg, true).await;
+
+        bundle_res.map_err(Into::into)
     }
 }
 
