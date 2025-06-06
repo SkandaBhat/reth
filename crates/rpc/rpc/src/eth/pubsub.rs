@@ -2,6 +2,8 @@
 
 use std::sync::Arc;
 
+use alloy_consensus::BlockHeader;
+use alloy_eips::{BlockNumHash, Encodable2718};
 use alloy_primitives::TxHash;
 use alloy_rpc_types_eth::{
     pubsub::{Params, PubSubSyncStatus, SubscriptionKind, SyncStatusMetadata},
@@ -11,9 +13,10 @@ use futures::StreamExt;
 use jsonrpsee::{
     server::SubscriptionMessage, types::ErrorObject, PendingSubscriptionSink, SubscriptionSink,
 };
+use reth_chain_state::CanonStateNotification;
 use reth_chain_state::CanonStateSubscriptions;
 use reth_network_api::NetworkInfo;
-use reth_primitives_traits::NodePrimitives;
+use reth_primitives_traits::{BlockBody, NodePrimitives};
 use reth_rpc_eth_api::{
     pubsub::EthPubSubApiServer, EthApiTypes, RpcNodeCore, RpcTransaction, TransactionCompat,
 };
@@ -133,7 +136,7 @@ where
                             };
                             std::future::ready(tx_value)
                         });
-                        return pipe_from_stream(accepted_sink, stream).await
+                        return pipe_from_stream(accepted_sink, stream).await;
                     }
                     Params::Bool(false) | Params::None => {
                         // only hashes requested
@@ -165,7 +168,7 @@ where
             .map_err(SubscriptionSerializeError::new)?;
 
             if accepted_sink.send(msg).await.is_err() {
-                return Ok(())
+                return Ok(());
             }
 
             while canon_state.next().await.is_some() {
@@ -185,7 +188,7 @@ where
                     .map_err(SubscriptionSerializeError::new)?;
 
                     if accepted_sink.send(msg).await.is_err() {
-                        break
+                        break;
                     }
                 }
             }
@@ -324,20 +327,75 @@ where
 
     /// Returns a stream that yields all logs that match the given filter.
     fn log_stream(&self, filter: Filter) -> impl Stream<Item = Log> {
-        BroadcastStream::new(self.eth_api.provider().subscribe_to_canonical_state())
-            .map(move |canon_state| {
-                canon_state.expect("new block subscription never ends").block_receipts()
+        self.eth_api.provider().canonical_state_stream().flat_map(|new_chain| {})
+    }
+
+    /// Returns a stream that yields all logs that match the given filter.
+    fn log_stream(&self, filter: Filter) -> impl Stream<Item = Log> {
+        self.eth_api
+            .provider()
+            .canonical_state_stream()
+            .flat_map(|new_chain| {
+                let chain_segments = new_chain
+                    .reverted()
+                    .into_iter()
+                    .map(|seg| (seg, true))
+                    .chain(std::iter::once((new_chain.committed(), false)));
+
+                let blocks_and_receipts_with_removed: Vec<_> = chain_segments
+                    .flat_map(|(seg, removed)| {
+                        let (blocks, receipts): (Vec<_>, Vec<_>) = seg
+                            .blocks_and_receipts()
+                            .map(|(block, receipts)| {
+                                (block.clone_sealed_block(), Arc::new(receipts.clone()))
+                            })
+                            .unzip();
+                        let blocks_with_receipts = blocks
+                            .into_iter()
+                            .zip(receipts)
+                            .map(|(block, receipts)| {
+                                let block_num_hash =
+                                    BlockNumHash::new(block.number(), block.hash());
+
+                                let tx_receipts: Vec<_> = block
+                                    .body()
+                                    .transactions()
+                                    .iter()
+                                    .zip(receipts.iter())
+                                    .map(|(tx, receipt)| (tx.trie_hash(), receipt.clone()))
+                                    .collect();
+                                (block_num_hash, tx_receipts, block.timestamp(), removed)
+                            })
+                            .collect::<Vec<_>>()
+                            .into_iter()
+                            .map(|(block_num_hash, tx_receipts, timestamp, removed)| {
+                                (block_num_hash, tx_receipts, timestamp, removed)
+                            });
+                        blocks_with_receipts
+                    })
+                    .collect();
+
+                futures::stream::iter(blocks_and_receipts_with_removed)
             })
-            .flat_map(futures::stream::iter)
-            .flat_map(move |(block_receipts, removed)| {
-                let all_logs = logs_utils::matching_block_logs_with_tx_hashes(
-                    &filter,
-                    block_receipts.block,
-                    block_receipts.timestamp,
-                    block_receipts.tx_receipts.iter().map(|(tx, receipt)| (*tx, receipt)),
-                    removed,
-                );
-                futures::stream::iter(all_logs)
-            })
+            .flat_map(
+                move |(block_num_hash, tx_receipts, timestamp, removed): (
+                    BlockNumHash,
+                    Vec<(TxHash, N::Receipt)>,
+                    u64,
+                    bool,
+                )| {
+                    // let filter = filter.clone();
+                    let tx_hashes_and_receipts =
+                        tx_receipts.iter().map(|(tx, receipt)| (*tx, receipt));
+                    let all_logs = logs_utils::matching_block_logs_with_tx_hashes(
+                        &filter,
+                        block_num_hash,
+                        timestamp,
+                        tx_hashes_and_receipts,
+                        removed,
+                    );
+                    futures::stream::iter(all_logs)
+                },
+            )
     }
 }
