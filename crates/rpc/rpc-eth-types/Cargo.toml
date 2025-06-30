@@ -58,6 +58,11 @@ rand.workspace = true
 tracing.workspace = true
 itertools.workspace = true
 
+# for filter maps
+sha2.workspace = true
+rustc-hash.workspace = true
+roaring.workspace = true
+
 [dev-dependencies]
 serde_json.workspace = true
 

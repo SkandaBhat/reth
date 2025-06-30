@@ -21,8 +21,9 @@ use crate::{
         accounts::BlockNumberAddress,
         blocks::{HeaderHash, StoredBlockOmmers},
         storage_sharded_key::StorageShardedKey,
-        AccountBeforeTx, ClientVersion, CompactU256, IntegerList, ShardedKey,
-        StoredBlockBodyIndices, StoredBlockWithdrawals,
+        AccountBeforeTx, ClientVersion, CompactU256, CompressedFilterRow, FilterMapMetadata,
+        IntegerList, LogValueRange, MapBoundary, ShardedKey, StoredBlockBodyIndices,
+        StoredBlockWithdrawals,
     },
     table::{Decode, DupSort, Encode, Table, TableInfo},
 };
@@ -522,6 +523,35 @@ tables! {
     table ChainState {
         type Key = ChainStateKey;
         type Value = BlockNumber;
+    }
+
+    /// Stores the overall filter maps range metadata.
+    /// Tracks global indexing progress and statistics.
+    table LogFilterMapsRange {
+        type Key = u8; // Single entry, use 0 as key
+        type Value = FilterMapMetadata;
+    }
+
+    /// Stores individual filter map rows.
+    /// Key is global row index across all maps.
+    /// Row index = map_index * MAP_HEIGHT + row_in_map
+    table LogFilterMapRows {
+        type Key = u64;
+        type Value = CompressedFilterRow;
+    }
+
+    /// Stores boundary information for each filter map.
+    /// Key is map index - tracks which blocks and log values each map covers.
+    table LogFilterMapBoundaries {
+        type Key = u32;
+        type Value = MapBoundary;
+    }
+
+    /// Maps block numbers to log value index ranges.
+    /// Enables efficient block-based queries by tracking which log values belong to each block.
+    table LogFilterMapBlockToLogs {
+        type Key = BlockNumber;
+        type Value = LogValueRange;
     }
 }
 

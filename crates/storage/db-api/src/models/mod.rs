@@ -25,6 +25,10 @@ pub use accounts::*;
 pub use blocks::*;
 pub use integer_list::IntegerList;
 pub use reth_db_models::{
+    filter_map::{
+        CompressedFilterRow, FilterMapMetadata, LogValueRange, MapBoundary, LAYER_COMMON_RATIO,
+        MAPS_PER_EPOCH, MAP_HEIGHT, MAP_WIDTH, MAX_BASE_ROW_LENGTH, VALUES_PER_MAP,
+    },
     AccountBeforeTx, ClientVersion, StaticFileBlockWithdrawals, StoredBlockBodyIndices,
     StoredBlockWithdrawals,
 };
@@ -233,6 +237,10 @@ impl_compression_for_compact!(
     StageCheckpoint,
     PruneCheckpoint,
     ClientVersion,
+    CompressedFilterRow,
+    FilterMapMetadata,
+    LogValueRange,
+    MapBoundary,
     // Non-DB
     GenesisAccount
 );
