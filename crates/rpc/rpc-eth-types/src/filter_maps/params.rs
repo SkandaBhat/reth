@@ -6,6 +6,8 @@ use fnv::FnvHasher;
 use sha2::{Digest, Sha256};
 use std::hash::Hasher;
 
+use crate::filter_maps::{constants::EXPECTED_MATCHES, FilterRow};
+
 /// A strictly monotonically increasing list of log value indices in the range of a
 /// filter map that are potential matches for certain filter criteria.
 ///
@@ -36,15 +38,7 @@ pub struct FilterMapParams {
 
 impl Default for FilterMapParams {
     fn default() -> Self {
-        Self {
-            log_map_height: 16,
-            log_map_width: 24,
-            log_maps_per_epoch: 10,
-            log_values_per_map: 16,
-            base_row_length_ratio: 8,
-            log_layer_diff: 4,
-            base_row_group_length: 32,
-        }
+        super::constants::DEFAULT_PARAMS
     }
 }
 
@@ -144,9 +138,55 @@ impl FilterMapParams {
         self.base_row_length() << log_layer_diff
     }
 
-    // TODO: Implement this
-    pub fn potential_matches(&self) -> PotentialMatches {
-        todo!()
+    /// Returns the list of log value indices potentially matching the given log
+    /// value hash in the range of the filter map the row belongs to.
+    ///
+    /// Note that the list of indices is always sorted and potential duplicates
+    /// are removed. Though the column indices are stored in the same order they
+    /// were added and therefore the true matches are automatically reverse
+    /// transformed in the right order, false positives can ruin this property.
+    /// Since these can only be separated from true matches after the combined
+    /// pattern matching of the outputs of individual log value matchers and this
+    /// pattern matcher assumes a sorted and duplicate-free list of indices, we
+    /// should ensure these properties here.
+    pub fn potential_matches(
+        &self,
+        rows: &[FilterRow],
+        map_index: u32,
+        log_value: &B256,
+    ) -> PotentialMatches {
+        let mut results = Vec::with_capacity(EXPECTED_MATCHES);
+        let map_first = (map_index as u64) << self.log_values_per_map;
+
+        for (layer_index, row) in rows.iter().enumerate() {
+            let max_len = self.max_row_length(layer_index as u32) as usize;
+            let row_len = row.len().min(max_len);
+
+            // Check each column in the row up to the effective length
+            for &column_value in &row[..row_len] {
+                let potential_match = map_first
+                    + (column_value >> (self.log_map_width - self.log_values_per_map)) as u64;
+
+                if column_value == self.column_index(potential_match, log_value) {
+                    results.push(potential_match);
+                }
+            }
+
+            // If this row isn't full, we're done checking
+            if row_len < max_len {
+                break;
+            }
+
+            // If we're at the last row and it's full, we have insufficient rows
+            if layer_index == rows.len() - 1 {
+                panic!("potentialMatches: insufficient list of row alternatives");
+            }
+        }
+
+        // Sort and deduplicate results
+        results.sort_unstable();
+        results.dedup();
+        results
     }
 }
 
