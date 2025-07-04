@@ -1,7 +1,18 @@
 //! Row and column mapping algorithms for FilterMaps based on EIP-7745.
+//! see: https://eips.ethereum.org/EIPS/eip-7745
 
 use alloy_primitives::B256;
+use fnv::FnvHasher;
+use sha2::{Digest, Sha256};
 use std::hash::Hasher;
+
+/// A strictly monotonically increasing list of log value indices in the range of a
+/// filter map that are potential matches for certain filter criteria.
+///
+/// Note that nil is used as a wildcard and therefore means that all log value
+/// indices in the filter map range are potential matches. If there are no
+/// potential matches in the given map's range then an empty slice should be used.
+pub type PotentialMatches = Vec<u64>;
 
 /// FilterMaps parameters based on EIP-7745
 #[derive(Debug, Clone)]
@@ -14,10 +25,13 @@ pub struct FilterMapParams {
     pub log_maps_per_epoch: u32,
     /// Log of values per map. Default: 16 (65,536 values)
     pub log_values_per_map: u32,
-    /// Base row length. Default: 24
-    pub base_row_length: u32,
-    /// Log of layer difference. Default: 2 (4x growth per layer)
+    /// baseRowLength / average row length
+    pub base_row_length_ratio: u32,
+    /// maxRowLength log2 growth per layer
     pub log_layer_diff: u32,
+
+    /// (Not affecting consensus)
+    pub base_row_group_length: u32,
 }
 
 impl Default for FilterMapParams {
@@ -27,8 +41,9 @@ impl Default for FilterMapParams {
             log_map_width: 24,
             log_maps_per_epoch: 10,
             log_values_per_map: 16,
-            base_row_length: 24,
-            log_layer_diff: 2,
+            base_row_length_ratio: 8,
+            log_layer_diff: 4,
+            base_row_group_length: 32,
         }
     }
 }
@@ -54,88 +69,98 @@ impl FilterMapParams {
         1 << self.log_values_per_map
     }
 
-    /// Get the maximum row length for a given layer
-    pub fn max_row_length(&self, layer: u32) -> u32 {
-        self.base_row_length << (layer * self.log_layer_diff)
+    /// Get the base row length
+    pub fn base_row_length(&self) -> u32 {
+        ((self.values_per_map() * self.base_row_length_ratio as u64) / self.map_height() as u64)
+            as u32
+    }
+
+    /// Calculate the row index in which the given log value should be marked
+    /// on the given map and mapping layer.
+    ///
+    /// Note that row assignments are re-shuffled with a different frequency on each
+    /// mapping layer, allowing efficient disk access and Merkle proofs for long
+    /// sections of short rows on lower order layers while avoiding putting too many
+    /// heavy rows next to each other on higher order layers.
+    pub fn row_index(&self, map_index: u32, layer_index: u32, log_value: &B256) -> u32 {
+        let mut hasher = Sha256::new();
+
+        hasher.update(log_value.as_slice());
+
+        let masked_index = self.masked_map_index(map_index, layer_index);
+        let mut index_bytes = [0u8; 8];
+        index_bytes[0..4].copy_from_slice(&masked_index.to_le_bytes());
+        index_bytes[4..8].copy_from_slice(&layer_index.to_le_bytes());
+        hasher.update(&index_bytes);
+
+        let hash = hasher.finalize();
+
+        // Take first 4 bytes and modulo by map height
+        let row = u32::from_le_bytes([hash[0], hash[1], hash[2], hash[3]]);
+        row % self.map_height()
+    }
+
+    /// Returns the column index where the given log value at the given
+    /// position should be marked.
+    pub fn column_index(&self, lv_index: u64, log_value: &B256) -> u32 {
+        let mut hasher = FnvHasher::default();
+        hasher.write(&lv_index.to_le_bytes());
+        hasher.write(log_value.as_slice());
+        let hash = hasher.finish();
+
+        // Calculate hash bits needed
+        let hash_bits = self.log_map_width - self.log_values_per_map;
+
+        // Combine position bits with hash bits
+        let position_bits = (lv_index % self.values_per_map()) as u32;
+        let hash_component = (hash >> (64 - hash_bits)) as u32 ^ (hash >> (32 - hash_bits)) as u32;
+
+        (position_bits << hash_bits) | hash_component
+    }
+
+    /// Returns the index used for row mapping calculation on the given layer.
+    ///
+    /// On layer zero the mapping changes once per epoch, then the frequency of
+    /// re-mapping increases with every new layer until it reaches the frequency
+    /// where it is different for every mapIndex.
+    pub fn masked_map_index(&self, map_index: u32, layer_index: u32) -> u32 {
+        let log_layer_diff = (layer_index * self.log_layer_diff).min(self.log_maps_per_epoch);
+        map_index & (u32::MAX << (self.log_maps_per_epoch - log_layer_diff))
+    }
+
+    // maxRowLength returns the maximum length filter rows are populated up to
+    // when using the given mapping layer. A log value can be marked on the map
+    // according to a given mapping layer if the row mapping on that layer points
+    // to a row that has not yet reached the maxRowLength belonging to that layer.
+    // This means that a row that is considered full on a given layer may still be
+    // extended further on a higher order layer.
+    // Each value is marked on the lowest order layer possible, assuming that marks
+    // are added in ascending log value index order.
+    // When searching for a log value one should consider all layers and process
+    // corresponding rows up until the first one where the row mapped to the given
+    // layer is not full.
+    pub fn max_row_length(&self, layer_index: u32) -> u32 {
+        let log_layer_diff = (layer_index * self.log_layer_diff).min(self.log_maps_per_epoch);
+        self.base_row_length() << log_layer_diff
+    }
+
+    // TODO: Implement this
+    pub fn potential_matches(&self) -> PotentialMatches {
+        todo!()
     }
 }
 
-/// Calculate the masked map index for row mapping.
-///
-/// The masking frequency changes based on the layer to provide
-/// different row distributions at each layer.
-pub fn masked_map_index(map_index: u32, layer_index: u32) -> u32 {
-    // Higher layers re-map more frequently
-    // Layer 0: no masking
-    // Layer 1: mask lowest bit
-    // Layer 2: mask lowest 2 bits, etc.
-    let mask = !((1u32 << layer_index) - 1);
-    map_index & mask
-}
+// /// Calculate the global row index for database storage.
+// ///
+// /// This ensures rows from the same map are stored together.
+// pub fn map_row_index(map_index: u32, row_index: u32, params: &FilterMapParams) -> u64 {
+//     ((map_index as u64) * (params.map_height() as u64)) + (row_index as u64)
+// }
 
-/// Calculate the row index for a log value in a specific map and layer.
-///
-/// Uses SHA256 hash to distribute values across rows uniformly.
-pub fn row_index(
-    map_index: u32,
-    layer_index: u32,
-    log_value: &B256,
-    params: &FilterMapParams,
-) -> u32 {
-    use sha2::{Digest, Sha256};
-
-    let mut hasher = Sha256::new();
-
-    // Hash the log value
-    hasher.update(log_value.as_slice());
-
-    // Include masked map index for re-shuffling at different layers
-    let masked_index = masked_map_index(map_index, layer_index);
-    let mut index_bytes = [0u8; 8];
-    index_bytes[0..4].copy_from_slice(&masked_index.to_le_bytes());
-    index_bytes[4..8].copy_from_slice(&layer_index.to_le_bytes());
-    hasher.update(&index_bytes);
-
-    let hash = hasher.finalize();
-
-    // Take first 4 bytes and modulo by map height
-    let row = u32::from_le_bytes([hash[0], hash[1], hash[2], hash[3]]);
-    row % params.map_height()
-}
-
-/// Calculate the column index for a log value.
-///
-/// Combines position within the map with a hash for collision resistance.
-pub fn column_index(lv_index: u64, log_value: &B256, params: &FilterMapParams) -> u32 {
-    use rustc_hash::FxHasher;
-
-    // Position within the current map
-    let position_bits = lv_index % params.values_per_map();
-
-    // Hash the log value index and value together
-    let mut hasher = FxHasher::default();
-    hasher.write_u64(lv_index);
-    hasher.write(log_value.as_slice());
-    let hash = hasher.finish();
-
-    // Use 8 bits from the hash for additional entropy
-    let hash_bits = (hash & 0xFF) as u32;
-
-    // Combine position (higher bits) with hash (lower bits)
-    ((position_bits as u32) << 8) | hash_bits
-}
-
-/// Calculate the global row index for database storage.
-///
-/// This ensures rows from the same map are stored together.
-pub fn map_row_index(map_index: u32, row_index: u32, params: &FilterMapParams) -> u64 {
-    ((map_index as u64) * (params.map_height() as u64)) + (row_index as u64)
-}
-
-/// Get the map index from a log value index.
-pub fn map_index_from_lv_index(lv_index: u64, params: &FilterMapParams) -> u32 {
-    (lv_index / params.values_per_map()) as u32
-}
+// /// Get the map index from a log value index.
+// pub fn map_index_from_lv_index(lv_index: u64, params: &FilterMapParams) -> u32 {
+//     (lv_index / params.values_per_map()) as u32
+// }
 
 #[cfg(test)]
 mod tests {
@@ -144,17 +169,19 @@ mod tests {
 
     #[test]
     fn test_masked_map_index() {
+        let params = FilterMapParams::default();
+
         // Layer 0: no masking
-        assert_eq!(masked_map_index(0b1111, 0), 0b1111);
+        assert_eq!(params.masked_map_index(0b1111, 0), 0b1111);
 
         // Layer 1: mask lowest bit
-        assert_eq!(masked_map_index(0b1111, 1), 0b1110);
+        assert_eq!(params.masked_map_index(0b1111, 1), 0b1110);
 
         // Layer 2: mask lowest 2 bits
-        assert_eq!(masked_map_index(0b1111, 2), 0b1100);
+        assert_eq!(params.masked_map_index(0b1111, 2), 0b1100);
 
         // Layer 3: mask lowest 3 bits
-        assert_eq!(masked_map_index(0b1111, 3), 0b1000);
+        assert_eq!(params.masked_map_index(0b1111, 3), 0b1000);
     }
 
     #[test]
@@ -164,21 +191,21 @@ mod tests {
         let value2 = b256!("0000000000000000000000000000000000000000000000000000000000000002");
 
         // Same value should always map to same row for same map/layer
-        let row1 = row_index(0, 0, &value1, &params);
-        let row2 = row_index(0, 0, &value1, &params);
+        let row1 = params.row_index(0, 0, &value1);
+        let row2 = params.row_index(0, 0, &value1);
         assert_eq!(row1, row2);
 
         // Different values should (likely) map to different rows
-        let row3 = row_index(0, 0, &value2, &params);
+        let row3 = params.row_index(0, 0, &value2);
         // Different values should produce different rows in most cases
         // We can't assert they're always different due to possible hash collisions
         // but we can verify they're valid row indices
         assert!(row3 < params.map_height());
 
         // Different layers should give different row mappings for the same value
-        let row_layer0 = row_index(0, 0, &value1, &params);
-        let row_layer1 = row_index(0, 1, &value1, &params);
-        let row_layer2 = row_index(0, 2, &value1, &params);
+        let row_layer0 = params.row_index(0, 0, &value1);
+        let row_layer1 = params.row_index(0, 1, &value1);
+        let row_layer2 = params.row_index(0, 2, &value1);
 
         // All should be valid indices
         assert!(row_layer0 < params.map_height());
@@ -198,46 +225,15 @@ mod tests {
         let value = b256!("0000000000000000000000000000000000000000000000000000000000000001");
 
         // Column index should include position information
-        let col1 = column_index(0, &value, &params);
-        let col2 = column_index(params.values_per_map(), &value, &params);
+        let col1 = params.column_index(0, &value);
+        let col2 = params.column_index(params.values_per_map(), &value);
 
         // Both should be in same position (0) but with different hash bits
         assert_eq!(col1 >> 8, 0);
         assert_eq!(col2 >> 8, 0);
 
         // Different positions
-        let col3 = column_index(1, &value, &params);
+        let col3 = params.column_index(1, &value);
         assert_eq!(col3 >> 8, 1);
-    }
-
-    #[test]
-    fn test_map_row_index() {
-        let params = FilterMapParams::default();
-
-        // First row of first map
-        assert_eq!(map_row_index(0, 0, &params), 0);
-
-        // First row of second map
-        assert_eq!(map_row_index(1, 0, &params), params.map_height() as u64);
-
-        // Last row of first map
-        assert_eq!(
-            map_row_index(0, params.map_height() - 1, &params),
-            (params.map_height() - 1) as u64
-        );
-    }
-
-    #[test]
-    fn test_layer_row_lengths() {
-        let params = FilterMapParams::default();
-
-        // Layer 0: base length
-        assert_eq!(params.max_row_length(0), 24);
-
-        // Layer 1: 4x base
-        assert_eq!(params.max_row_length(1), 96);
-
-        // Layer 2: 16x base
-        assert_eq!(params.max_row_length(2), 384);
     }
 }
