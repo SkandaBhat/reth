@@ -1,10 +1,10 @@
 //! FilterMaps query engine for efficient log retrieval.
 
-mod log_value;
 mod mapping;
 mod matcher;
 mod query;
 mod renderer;
+mod utils;
 
 pub use log_value::{address_value, process_log, topic_value, LogValue};
 pub use mapping::{
