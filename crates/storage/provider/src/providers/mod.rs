@@ -28,9 +28,6 @@ pub use blockchain_provider::BlockchainProvider;
 mod consistent;
 pub use consistent::ConsistentProvider;
 
-mod filter_maps;
-pub use filter_maps::{FilterMaps, FilterMapsConfig};
-
 /// Helper trait to bound [`NodeTypes`] so that combined with database they satisfy
 /// [`ProviderNodeTypes`].
 pub trait NodeTypesForProvider

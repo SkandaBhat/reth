@@ -36,7 +36,7 @@ use reth_db_api::{
     database::Database,
     models::{
         sharded_key, storage_sharded_key::StorageShardedKey, AccountBeforeTx, BlockNumberAddress,
-        ShardedKey, StoredBlockBodyIndices,
+        LogValueRange, ShardedKey, StoredBlockBodyIndices,
     },
     table::Table,
     tables,
@@ -56,8 +56,7 @@ use reth_stages_types::{StageCheckpoint, StageId};
 use reth_static_file_types::StaticFileSegment;
 use reth_storage_api::{
     BlockBodyIndicesProvider, BlockBodyReader, FilterMapReader, FilterMapWriter,
-    NodePrimitivesProvider, StateProvider, StorageChangeSetReader,
-    TryIntoHistoricalStateProvider,
+    NodePrimitivesProvider, StateProvider, StorageChangeSetReader, TryIntoHistoricalStateProvider,
 };
 use reth_storage_errors::provider::{ProviderResult, RootMismatch};
 use reth_trie::{
@@ -169,10 +168,10 @@ impl<TX: DbTx + 'static, N: NodeTypes> DatabaseProvider<TX, N> {
     ) -> ProviderResult<Box<dyn StateProvider + 'a>> {
         let mut block_number =
             self.block_number(block_hash)?.ok_or(ProviderError::BlockHashNotFound(block_hash))?;
-        if block_number == self.best_block_number().unwrap_or_default() &&
-            block_number == self.last_block_number().unwrap_or_default()
+        if block_number == self.best_block_number().unwrap_or_default()
+            && block_number == self.last_block_number().unwrap_or_default()
         {
-            return Ok(Box::new(LatestStateProviderRef::new(self)))
+            return Ok(Box::new(LatestStateProviderRef::new(self)));
         }
 
         // +1 as the changeset that we want is the one that was applied after this block.
@@ -333,7 +332,7 @@ impl<TX: DbTx + DbTxMut + 'static, N: NodeTypesForProvider> DatabaseProvider<TX,
                 root: GotExpected { got: new_state_root, expected: parent_state_root },
                 block_number: parent_number,
                 block_hash: parent_hash,
-            })))
+            })));
         }
         self.write_trie_updates(&trie_updates)?;
 
@@ -377,7 +376,7 @@ impl<TX: DbTx + 'static, N: NodeTypes> TryIntoHistoricalStateProvider for Databa
         // if the block number is the same as the currently best block number on disk we can use the
         // latest state provider here
         if block_number == self.best_block_number().unwrap_or_default() {
-            return Ok(Box::new(LatestStateProvider::new(self)))
+            return Ok(Box::new(LatestStateProvider::new(self)));
         }
 
         // +1 as the changeset that we want is the one that was applied after this block.
@@ -483,7 +482,7 @@ where
     while let Some((sharded_key, list)) = item {
         // If the shard does not belong to the key, break.
         if !shard_belongs_to_key(&sharded_key) {
-            break
+            break;
         }
 
         // Always delete the current shard from the database first
@@ -498,18 +497,18 @@ where
         // Keep it deleted (don't return anything for reinsertion)
         if first >= block_number {
             item = cursor.prev()?;
-            continue
+            continue;
         }
         // Case 2: This is a boundary shard (spans across the unwinding point)
         // The shard contains some blocks below and some at/above the unwinding point
         else if block_number <= sharded_key.as_ref().highest_block_number {
             // Return only the block numbers that are below the unwinding point
             // These will be reinserted to preserve the historical data
-            return Ok(list.iter().take_while(|i| *i < block_number).collect::<Vec<_>>())
+            return Ok(list.iter().take_while(|i| *i < block_number).collect::<Vec<_>>());
         }
         // Case 3: Entire shard is below the unwinding point
         // Return all block numbers for reinsertion (preserve entire shard)
-        return Ok(list.iter().collect::<Vec<_>>())
+        return Ok(list.iter().collect::<Vec<_>>());
     }
 
     // No shards found or all processed
@@ -629,7 +628,7 @@ impl<TX: DbTx + 'static, N: NodeTypesForProvider> DatabaseProvider<TX, N> {
         F: FnMut(H, BodyTy<N>, Range<TxNumber>) -> ProviderResult<R>,
     {
         if range.is_empty() {
-            return Ok(Vec::new())
+            return Ok(Vec::new());
         }
 
         let len = range.end().saturating_sub(*range.start()) as usize;
@@ -824,7 +823,7 @@ impl<TX: DbTxMut + DbTx + 'static, N: NodeTypes> DatabaseProvider<TX, N> {
             // delete old shard so new one can be inserted.
             cursor.delete_current()?;
             let list = list.iter().collect::<Vec<_>>();
-            return Ok(list)
+            return Ok(list);
         }
         Ok(Vec::new())
     }
@@ -983,7 +982,7 @@ impl<TX: DbTx + 'static, N: NodeTypesForProvider> HeaderSyncGapProvider
             }
             Ordering::Less => {
                 // There's either missing or corrupted files.
-                return Err(ProviderError::HeaderNotFound(next_static_file_block_num.into()))
+                return Err(ProviderError::HeaderNotFound(next_static_file_block_num.into()));
             }
             Ordering::Equal => {}
         }
@@ -1029,7 +1028,7 @@ impl<TX: DbTx + 'static, N: NodeTypesForProvider> HeaderProvider for DatabasePro
             if let Some(td) = self.chain_spec.final_paris_total_difficulty() {
                 // if this block is higher than the final paris(merge) block, return the final paris
                 // difficulty
-                return Ok(Some(td))
+                return Ok(Some(td));
             }
         }
 
@@ -1095,7 +1094,7 @@ impl<TX: DbTx + 'static, N: NodeTypesForProvider> HeaderProvider for DatabasePro
                         .ok_or_else(|| ProviderError::HeaderNotFound(number.into()))?;
                     let sealed = SealedHeader::new(header, hash);
                     if !predicate(&sealed) {
-                        break
+                        break;
                     }
                     headers.push(sealed);
                 }
@@ -1192,7 +1191,7 @@ impl<TX: DbTx + 'static, N: NodeTypesForProvider> BlockReader for DatabaseProvid
                 // If they exist but are not indexed, we don't have enough
                 // information to return the block anyways, so we return `None`.
                 let Some(transactions) = self.transactions_by_block(number.into())? else {
-                    return Ok(None)
+                    return Ok(None);
                 };
 
                 let body = self
@@ -1202,7 +1201,7 @@ impl<TX: DbTx + 'static, N: NodeTypesForProvider> BlockReader for DatabaseProvid
                     .pop()
                     .ok_or(ProviderError::InvalidStorageOutput)?;
 
-                return Ok(Some(Self::Block::new(header, body)))
+                return Ok(Some(Self::Block::new(header, body)));
             }
         }
 
@@ -1445,7 +1444,7 @@ impl<TX: DbTx + 'static, N: NodeTypesForProvider> TransactionsProvider for Datab
                                 timestamp: header.timestamp(),
                             };
 
-                            return Ok(Some((transaction, meta)))
+                            return Ok(Some((transaction, meta)));
                         }
                     }
                 }
@@ -1473,7 +1472,7 @@ impl<TX: DbTx + 'static, N: NodeTypesForProvider> TransactionsProvider for Datab
                     Ok(Some(Vec::new()))
                 } else {
                     Ok(Some(self.transactions_by_tx_range_with_cursor(tx_range, &mut tx_cursor)?))
-                }
+                };
             }
         }
         Ok(None)
@@ -1555,7 +1554,7 @@ impl<TX: DbTx + 'static, N: NodeTypesForProvider> ReceiptProvider for DatabasePr
                     Ok(Some(Vec::new()))
                 } else {
                     self.receipts_by_tx_range(tx_range).map(Some)
-                }
+                };
             }
         }
         Ok(None)
@@ -1833,8 +1832,8 @@ impl<TX: DbTxMut + DbTx + 'static, N: NodeTypesForProvider> StateWriter
         // Prepare receipts static writer if we are going to write receipts to static files
         //
         // We are writing to static files if requested and if there's no receipt pruning configured
-        let mut receipts_static_writer = (write_receipts_to.static_files() &&
-            !has_receipts_pruning)
+        let mut receipts_static_writer = (write_receipts_to.static_files()
+            && !has_receipts_pruning)
             .then(|| self.static_file_provider.get_writer(first_block, StaticFileSegment::Receipts))
             .transpose()?;
 
@@ -1863,12 +1862,13 @@ impl<TX: DbTxMut + DbTx + 'static, N: NodeTypesForProvider> StateWriter
             }
 
             // Skip writing receipts if pruning configuration requires us to.
-            if prunable_receipts &&
-                self.prune_modes
+            if prunable_receipts
+                && self
+                    .prune_modes
                     .receipts
                     .is_some_and(|mode| mode.should_prune(block_number, tip))
             {
-                continue
+                continue;
             }
 
             // If there are new addresses to retain after this block number, track them
@@ -1880,11 +1880,11 @@ impl<TX: DbTxMut + DbTx + 'static, N: NodeTypesForProvider> StateWriter
                 let receipt_idx = first_tx_index + idx as u64;
                 // Skip writing receipt if log filter is active and it does not have any logs to
                 // retain
-                if prunable_receipts &&
-                    has_contract_log_filter &&
-                    !receipt.logs().iter().any(|log| allowed_addresses.contains(&log.address))
+                if prunable_receipts
+                    && has_contract_log_filter
+                    && !receipt.logs().iter().any(|log| allowed_addresses.contains(&log.address))
                 {
-                    continue
+                    continue;
                 }
 
                 if let Some(writer) = &mut receipts_static_writer {
@@ -2192,7 +2192,7 @@ impl<TX: DbTxMut + DbTx + 'static, N: NodeTypesForProvider> StateWriter
         let range = block + 1..=self.last_block_number()?;
 
         if range.is_empty() {
-            return Ok(ExecutionOutcome::default())
+            return Ok(ExecutionOutcome::default());
         }
         let start_block_number = *range.start();
 
@@ -2310,7 +2310,7 @@ impl<TX: DbTxMut + DbTx + 'static, N: NodeTypes> TrieWriter for DatabaseProvider
     /// Writes trie updates. Returns the number of entries modified.
     fn write_trie_updates(&self, trie_updates: &TrieUpdates) -> ProviderResult<usize> {
         if trie_updates.is_empty() {
-            return Ok(0)
+            return Ok(0);
         }
 
         // Track the number of inserted entries.
@@ -2384,7 +2384,7 @@ impl<TX: DbTxMut + DbTx + 'static, N: NodeTypes> StorageTrieWriter for DatabaseP
         updates: &StorageTrieUpdates,
     ) -> ProviderResult<usize> {
         if updates.is_empty() {
-            return Ok(0)
+            return Ok(0);
         }
 
         let cursor = self.tx_ref().cursor_dup_write::<tables::StoragesTrie>()?;
@@ -2606,7 +2606,7 @@ impl<TX: DbTxMut + DbTx + 'static, N: NodeTypes> HashingWriter for DatabaseProvi
                     root: GotExpected { got: state_root, expected: expected_state_root },
                     block_number: *range.end(),
                     block_hash: end_block_hash,
-                })))
+                })));
             }
             self.write_trie_updates(&trie_updates)?;
         }
@@ -2692,8 +2692,8 @@ impl<TX: DbTxMut + DbTx + 'static, N: NodeTypes> HistoryWriter for DatabaseProvi
                 StorageShardedKey::last(address, storage_key),
                 rem_index,
                 |storage_sharded_key| {
-                    storage_sharded_key.address == address &&
-                        storage_sharded_key.sharded_key.key == storage_key
+                    storage_sharded_key.address == address
+                        && storage_sharded_key.sharded_key.key == storage_key
                 },
             )?;
 
@@ -3066,7 +3066,7 @@ impl<TX: DbTxMut + DbTx + 'static, N: NodeTypesForProvider + 'static> BlockWrite
     ) -> ProviderResult<()> {
         if blocks.is_empty() {
             debug!(target: "providers::db", "Attempted to append empty block range");
-            return Ok(())
+            return Ok(());
         }
 
         let first_number = blocks.first().unwrap().number();
@@ -3212,10 +3212,7 @@ impl<TX: DbTx + 'static, N: NodeTypes> FilterMapReader for DatabaseProvider<TX, 
         }
     }
 
-    fn get_block_log_range(
-        &self,
-        block_number: BlockNumber,
-    ) -> ProviderResult<Option<(u64, u64)>> {
+    fn get_block_log_range(&self, block_number: BlockNumber) -> ProviderResult<Option<(u64, u64)>> {
         if let Some(range) = self.tx.get::<tables::LogFilterMapBlockToLogs>(block_number)? {
             Ok(Some((range.start_index, range.end_index)))
         } else {
@@ -3259,14 +3256,29 @@ impl<TX: DbTx + 'static, N: NodeTypes> FilterMapReader for DatabaseProvider<TX, 
             Ok(false)
         }
     }
+
+    fn get_block_log_value_pointer(
+        &self,
+        block_number: BlockNumber,
+    ) -> ProviderResult<Option<u64>> {
+        if let Some(pointer) = self.tx.get::<tables::LogFilterMapBlockToLogs>(block_number)? {
+            Ok(Some(pointer.start_index))
+        } else {
+            Ok(None)
+        }
+    }
+
+    // TODO: implement this
+    fn get_block_log_value_pointers_range(
+        &self,
+        block_range: impl RangeBounds<BlockNumber>,
+    ) -> ProviderResult<Vec<(BlockNumber, u64)>> {
+        Ok(Vec::new())
+    }
 }
 
 impl<TX: DbTxMut + DbTx + 'static, N: NodeTypes> FilterMapWriter for DatabaseProvider<TX, N> {
-    fn put_filter_map_row(
-        &self,
-        global_row_index: u64,
-        row_data: Vec<u8>,
-    ) -> ProviderResult<()> {
+    fn put_filter_map_row(&self, global_row_index: u64, row_data: Vec<u8>) -> ProviderResult<()> {
         use reth_db_api::models::CompressedFilterRow;
 
         self.tx.put::<tables::LogFilterMapRows>(
@@ -3306,6 +3318,18 @@ impl<TX: DbTxMut + DbTx + 'static, N: NodeTypes> FilterMapWriter for DatabasePro
             LogValueRange { start_index, end_index },
         )?;
 
+        Ok(())
+    }
+
+    fn put_block_log_value_pointer(
+        &self,
+        block_number: BlockNumber,
+        start_index: u64,
+    ) -> ProviderResult<()> {
+        self.tx.put::<tables::LogFilterMapBlockToLogs>(
+            block_number,
+            LogValueRange { start_index, end_index: 0 },
+        )?;
         Ok(())
     }
 
@@ -3649,16 +3673,16 @@ mod tests {
     #[test]
     fn test_filter_map_metadata() {
         use reth_storage_api::{FilterMapReader, FilterMapWriter};
-        
+
         let factory = create_test_provider_factory();
         let provider_rw = factory.provider_rw().unwrap();
-        
+
         // Initially no metadata
         assert_eq!(provider_rw.get_filter_map_metadata().unwrap(), None);
-        
+
         // Write metadata
         provider_rw.put_filter_map_metadata(100, 65536, 1).unwrap();
-        
+
         // Read it back
         let metadata = provider_rw.get_filter_map_metadata().unwrap();
         assert!(metadata.is_some(), "Metadata should exist after writing");
@@ -3666,9 +3690,9 @@ mod tests {
         assert_eq!(height, 100, "height mismatch: got {}, expected 100", height);
         assert_eq!(values, 65536);
         assert_eq!(maps, 1);
-        
+
         provider_rw.commit().unwrap();
-        
+
         // Verify persistence
         let provider = factory.provider().unwrap();
         let (height, values, maps) = provider.get_filter_map_metadata().unwrap().unwrap();
@@ -3679,19 +3703,19 @@ mod tests {
 
     #[test]
     fn test_database_roundtrip() {
-        use reth_storage_api::{FilterMapReader, FilterMapWriter};
         use reth_codecs::Compact;
         use reth_db_api::models::LogValueRange;
-        
+        use reth_storage_api::{FilterMapReader, FilterMapWriter};
+
         // First test Compact encoding directly
         println!("\n=== Testing Compact encoding ===");
-        
+
         // Test case 1: start=0, end=10
         let range1 = LogValueRange { start_index: 0, end_index: 10 };
         let mut buf1 = Vec::new();
         let len1 = range1.to_compact(&mut buf1);
         println!("Range(0,10): encoded {} bytes, buffer={:?}", len1, buf1);
-        
+
         // Manually encode each field to understand the pattern
         let mut buf_start = Vec::new();
         let mut buf_end = Vec::new();
@@ -3699,36 +3723,42 @@ mod tests {
         let len_end = 10u64.to_compact(&mut buf_end);
         println!("  0u64: {} bytes, {:?}", len_start, buf_start);
         println!("  10u64: {} bytes, {:?}", len_end, buf_end);
-        
+
         let (decoded1, remaining) = LogValueRange::from_compact(&buf1, buf1.len());
-        println!("Range(0,10) decoded: start={}, end={}, remaining={} bytes", 
-                 decoded1.start_index, decoded1.end_index, remaining.len());
-        
+        println!(
+            "Range(0,10) decoded: start={}, end={}, remaining={} bytes",
+            decoded1.start_index,
+            decoded1.end_index,
+            remaining.len()
+        );
+
         // Test case 2: both non-zero
         let range2 = LogValueRange { start_index: 100, end_index: 200 };
         let mut buf2 = Vec::new();
         let len2 = range2.to_compact(&mut buf2);
         println!("\nRange(100,200): encoded {} bytes, buffer={:?}", len2, buf2);
         let (decoded2, _) = LogValueRange::from_compact(&buf2, buf2.len());
-        println!("Range(100,200) decoded: start={}, end={}", 
-                 decoded2.start_index, decoded2.end_index);
-        
+        println!(
+            "Range(100,200) decoded: start={}, end={}",
+            decoded2.start_index, decoded2.end_index
+        );
+
         println!("\n=== Testing database storage ===");
-        
+
         let factory = create_test_provider_factory();
         let provider_rw = factory.provider_rw().unwrap();
-        
+
         // For now, avoid zero values to work around the encoding issue
         provider_rw.put_block_log_range(100, 1, 10).unwrap();
         provider_rw.put_block_log_range(101, 11, 25).unwrap();
         provider_rw.put_block_log_range(102, 26, 30).unwrap();
         provider_rw.put_block_log_range(103, 1000, 2000).unwrap();
-        
+
         // Commit and read back
         provider_rw.commit().unwrap();
-        
+
         let provider = factory.provider().unwrap();
-        
+
         // Check all values
         assert_eq!(provider.get_block_log_range(100).unwrap(), Some((1, 10)));
         assert_eq!(provider.get_block_log_range(101).unwrap(), Some((11, 25)));
@@ -3736,58 +3766,58 @@ mod tests {
         assert_eq!(provider.get_block_log_range(103).unwrap(), Some((1000, 2000)));
         assert_eq!(provider.get_block_log_range(104).unwrap(), None);
     }
-    
+
     #[test]
     fn test_block_log_range_operations_simple() {
         use reth_storage_api::{FilterMapReader, FilterMapWriter};
-        
+
         let factory = create_test_provider_factory();
         let provider_rw = factory.provider_rw().unwrap();
-        
+
         // Write a single range
         provider_rw.put_block_log_range(100, 0, 10).unwrap();
-        
+
         // Read it back immediately (before commit)
         let result_before = provider_rw.get_block_log_range(100).unwrap();
         println!("Before commit: {:?}", result_before);
-        
+
         provider_rw.commit().unwrap();
-        
+
         // Read it back from a new provider
         let provider = factory.provider().unwrap();
         let result = provider.get_block_log_range(100).unwrap();
         println!("After commit: {:?}", result);
-        
+
         assert!(result.is_some());
         let (start, end) = result.unwrap();
         assert_eq!(start, 0);
         assert_eq!(end, 10);
     }
-    
+
     #[test]
     fn test_filter_map_row_operations() {
         use reth_storage_api::{FilterMapReader, FilterMapWriter};
-        
+
         let factory = create_test_provider_factory();
         let provider_rw = factory.provider_rw().unwrap();
-        
+
         // Initially no row
         assert_eq!(provider_rw.get_filter_map_row(0).unwrap(), None);
-        
+
         // Write a row
         let row_data = vec![1, 2, 3, 4, 5];
         provider_rw.put_filter_map_row(0, row_data.clone()).unwrap();
-        
+
         // Read it back
         let retrieved = provider_rw.get_filter_map_row(0).unwrap().unwrap();
         assert_eq!(retrieved, row_data);
-        
+
         // Write another row
         let row_data2 = vec![6, 7, 8, 9];
         provider_rw.put_filter_map_row(100, row_data2.clone()).unwrap();
-        
+
         provider_rw.commit().unwrap();
-        
+
         // Verify persistence
         let provider = factory.provider().unwrap();
         assert_eq!(provider.get_filter_map_row(0).unwrap().unwrap(), row_data);
@@ -3798,28 +3828,28 @@ mod tests {
     #[test]
     fn test_map_boundary_operations() {
         use reth_storage_api::{FilterMapReader, FilterMapWriter};
-        
+
         let factory = create_test_provider_factory();
         let provider_rw = factory.provider_rw().unwrap();
-        
+
         // Initially no boundary
         assert_eq!(provider_rw.get_map_boundary(0).unwrap(), None);
-        
+
         // Write boundaries
         provider_rw.put_map_boundary(0, 1000, 65535).unwrap();
         provider_rw.put_map_boundary(1, 2000, 131071).unwrap();
-        
+
         // Read them back
         let (block, index) = provider_rw.get_map_boundary(0).unwrap().unwrap();
         assert_eq!(block, 1000);
         assert_eq!(index, 65535);
-        
+
         let (block, index) = provider_rw.get_map_boundary(1).unwrap().unwrap();
         assert_eq!(block, 2000);
         assert_eq!(index, 131071);
-        
+
         provider_rw.commit().unwrap();
-        
+
         // Verify persistence
         let provider = factory.provider().unwrap();
         let (block, index) = provider.get_map_boundary(0).unwrap().unwrap();
@@ -3830,31 +3860,31 @@ mod tests {
     #[test]
     fn test_block_log_range_operations() {
         use reth_storage_api::{FilterMapReader, FilterMapWriter};
-        
+
         let factory = create_test_provider_factory();
         let provider_rw = factory.provider_rw().unwrap();
-        
+
         // Initially no range
         assert_eq!(provider_rw.get_block_log_range(100).unwrap(), None);
-        
+
         // Write ranges
         provider_rw.put_block_log_range(100, 0, 10).unwrap();
         provider_rw.put_block_log_range(101, 11, 25).unwrap();
         provider_rw.put_block_log_range(102, 26, 30).unwrap();
-        
+
         // Read them back - debug print first
         let result = provider_rw.get_block_log_range(100).unwrap();
         println!("Block 100 log range result: {:?}", result);
         let (start, end) = result.unwrap();
         assert_eq!(start, 0);
         assert_eq!(end, 10);
-        
+
         let (start, end) = provider_rw.get_block_log_range(101).unwrap().unwrap();
         assert_eq!(start, 11);
         assert_eq!(end, 25);
-        
+
         provider_rw.commit().unwrap();
-        
+
         // Verify persistence and non-existent blocks
         let provider = factory.provider().unwrap();
         assert_eq!(provider.get_block_log_range(100).unwrap().unwrap(), (0, 10));
@@ -3865,94 +3895,94 @@ mod tests {
     #[test]
     fn test_is_filter_map_indexed() {
         use reth_storage_api::{FilterMapReader, FilterMapWriter};
-        
+
         let factory = create_test_provider_factory();
         let provider_rw = factory.provider_rw().unwrap();
-        
+
         // Initially not indexed
         assert!(!provider_rw.is_filter_map_indexed(0..=100).unwrap());
-        
+
         // Set metadata
         provider_rw.put_filter_map_metadata(100, 65536, 1).unwrap();
-        
+
         // Now indexed up to block 100
         assert!(provider_rw.is_filter_map_indexed(0..=100).unwrap());
         assert!(provider_rw.is_filter_map_indexed(50..=100).unwrap());
         assert!(!provider_rw.is_filter_map_indexed(0..=101).unwrap());
         assert!(!provider_rw.is_filter_map_indexed(101..=200).unwrap());
-        
+
         provider_rw.commit().unwrap();
     }
 
     #[test]
     fn test_delete_filter_maps() {
-        use reth_storage_api::{FilterMapReader, FilterMapWriter};
         use reth_db_api::models::MAP_HEIGHT;
-        
+        use reth_storage_api::{FilterMapReader, FilterMapWriter};
+
         let factory = create_test_provider_factory();
         let provider_rw = factory.provider_rw().unwrap();
-        
+
         // Setup test data
         // Map 0: blocks 0-100, log values 0-65535
         // Map 1: blocks 101-200, log values 65536-131071
         provider_rw.put_map_boundary(0, 100, 65535).unwrap();
         provider_rw.put_map_boundary(1, 200, 131071).unwrap();
-        
+
         // Add block to log mappings
         provider_rw.put_block_log_range(50, 30000, 40000).unwrap();
         provider_rw.put_block_log_range(150, 80000, 90000).unwrap();
-        
+
         // Add some rows for map 0 and 1
         provider_rw.put_filter_map_row(0, vec![1, 2, 3]).unwrap();
         provider_rw.put_filter_map_row(1, vec![4, 5, 6]).unwrap();
         provider_rw.put_filter_map_row(MAP_HEIGHT, vec![7, 8, 9]).unwrap(); // First row of map 1
-        
+
         // Delete blocks 140-160 (should delete map 1)
         let deleted = provider_rw.delete_filter_maps(140..=160).unwrap();
         assert_eq!(deleted, 1); // Only map 1 should be deleted
-        
+
         // Verify map 0 still exists
         assert!(provider_rw.get_map_boundary(0).unwrap().is_some());
         assert!(provider_rw.get_filter_map_row(0).unwrap().is_some());
-        
+
         // Verify map 1 is deleted
         assert!(provider_rw.get_map_boundary(1).unwrap().is_none());
         assert!(provider_rw.get_filter_map_row(MAP_HEIGHT).unwrap().is_none());
-        
+
         // Verify block mappings are deleted
         assert!(provider_rw.get_block_log_range(150).unwrap().is_none());
         assert!(provider_rw.get_block_log_range(50).unwrap().is_some()); // Map 0 block still exists
-        
+
         provider_rw.commit().unwrap();
     }
 
     #[test]
     fn test_filter_map_row_overwrite() {
         use reth_storage_api::{FilterMapReader, FilterMapWriter};
-        
+
         let factory = create_test_provider_factory();
         let provider_rw = factory.provider_rw().unwrap();
-        
+
         // Write initial data
         let initial_data = vec![1, 2, 3, 4, 5];
         provider_rw.put_filter_map_row(42, initial_data.clone()).unwrap();
         assert_eq!(provider_rw.get_filter_map_row(42).unwrap().unwrap(), initial_data);
-        
+
         // Overwrite with new data
         let new_data = vec![10, 20, 30];
         provider_rw.put_filter_map_row(42, new_data.clone()).unwrap();
         assert_eq!(provider_rw.get_filter_map_row(42).unwrap().unwrap(), new_data);
-        
+
         provider_rw.commit().unwrap();
     }
 
     #[test]
     fn test_filter_map_metadata_simple() {
         use reth_db_api::models::FilterMapMetadata;
-        
+
         let factory = create_test_provider_factory();
         let provider_rw = factory.provider_rw().unwrap();
-        
+
         // Test direct table access
         let meta = FilterMapMetadata {
             indexed_height: 42,
@@ -3960,46 +3990,46 @@ mod tests {
             total_maps: 1,
             version: 0,
         };
-        
+
         provider_rw.tx.put::<tables::LogFilterMapsRange>(0, meta.clone()).unwrap();
-        
+
         // Read it back directly
         let read_meta = provider_rw.tx.get::<tables::LogFilterMapsRange>(0).unwrap().unwrap();
         assert_eq!(read_meta.indexed_height, 42);
         assert_eq!(read_meta.total_log_values, 100);
         assert_eq!(read_meta.total_maps, 1);
         assert_eq!(read_meta.version, 0);
-        
+
         provider_rw.commit().unwrap();
     }
 
     #[test]
     fn test_filter_map_edge_cases() {
-        use reth_storage_api::{FilterMapReader, FilterMapWriter};
         use reth_db_api::models::LogValueRange;
-        
+        use reth_storage_api::{FilterMapReader, FilterMapWriter};
+
         let factory = create_test_provider_factory();
         let provider_rw = factory.provider_rw().unwrap();
-        
+
         // Test edge case: zero values in LogValueRange
         provider_rw.put_block_log_range(1, 0, 10).unwrap();
         let (start, end) = provider_rw.get_block_log_range(1).unwrap().unwrap();
         assert_eq!(start, 0, "Zero start_index should be preserved");
         assert_eq!(end, 10, "End index should be preserved");
-        
+
         // Test edge case: both zeros
         provider_rw.put_block_log_range(2, 0, 0).unwrap();
         let (start, end) = provider_rw.get_block_log_range(2).unwrap().unwrap();
         assert_eq!(start, 0, "Zero start should be preserved");
         assert_eq!(end, 0, "Zero end should be preserved");
-        
+
         // Test edge case: large values
         let large_val = u64::MAX / 2;
         provider_rw.put_block_log_range(3, large_val, large_val + 1000).unwrap();
         let (start, end) = provider_rw.get_block_log_range(3).unwrap().unwrap();
         assert_eq!(start, large_val);
         assert_eq!(end, large_val + 1000);
-        
+
         // Test direct Compact encoding/decoding
         use reth_codecs::Compact;
         let range = LogValueRange { start_index: 0, end_index: 10 };
@@ -4008,26 +4038,26 @@ mod tests {
         let (decoded, _) = LogValueRange::from_compact(&buf, buf.len());
         assert_eq!(decoded.start_index, 0);
         assert_eq!(decoded.end_index, 10);
-        
+
         provider_rw.commit().unwrap();
     }
 
     #[test]
     fn test_filter_map_concurrent_access() {
         use reth_storage_api::{FilterMapReader, FilterMapWriter};
-        
+
         let factory = create_test_provider_factory();
-        
+
         // Test concurrent reads
         let provider_rw = factory.provider_rw().unwrap();
         provider_rw.put_filter_map_metadata(100, 65536, 1).unwrap();
         provider_rw.put_filter_map_row(0, vec![1, 2, 3]).unwrap();
         provider_rw.commit().unwrap();
-        
+
         // Multiple readers should work
         let provider_r1 = factory.provider().unwrap();
         let provider_r2 = factory.provider().unwrap();
-        
+
         assert!(provider_r1.get_filter_map_metadata().unwrap().is_some());
         assert!(provider_r2.get_filter_map_metadata().unwrap().is_some());
         assert_eq!(provider_r1.get_filter_map_row(0).unwrap().unwrap(), vec![1, 2, 3]);
