@@ -3,6 +3,7 @@
 
 use alloy_primitives::B256;
 use fnv::FnvHasher;
+
 use sha2::{Digest, Sha256};
 use std::hash::Hasher;
 
@@ -14,7 +15,7 @@ use crate::filter_maps::{constants::EXPECTED_MATCHES, FilterRow};
 /// Note that nil is used as a wildcard and therefore means that all log value
 /// indices in the filter map range are potential matches. If there are no
 /// potential matches in the given map's range then an empty slice should be used.
-pub type PotentialMatches = Vec<u64>;
+type PotentialMatches = Vec<u64>;
 
 /// FilterMaps parameters based on EIP-7745
 #[derive(Debug, Clone)]
@@ -107,9 +108,10 @@ impl FilterMapParams {
 
         // Combine position bits with hash bits
         let position_bits = (lv_index % self.values_per_map()) as u32;
-        let hash_component = (hash >> (64 - hash_bits)) as u32 ^ (hash >> (32 - hash_bits)) as u32;
 
-        (position_bits << hash_bits) | hash_component
+        let hash_component = (hash >> (64 - hash_bits)) as u32 ^ (hash as u32) >> (32 - hash_bits);
+
+        (position_bits << hash_bits) + hash_component
     }
 
     /// Returns the index used for row mapping calculation on the given layer.
@@ -122,17 +124,19 @@ impl FilterMapParams {
         map_index & (u32::MAX << (self.log_maps_per_epoch - log_layer_diff))
     }
 
-    // maxRowLength returns the maximum length filter rows are populated up to
-    // when using the given mapping layer. A log value can be marked on the map
-    // according to a given mapping layer if the row mapping on that layer points
-    // to a row that has not yet reached the maxRowLength belonging to that layer.
-    // This means that a row that is considered full on a given layer may still be
-    // extended further on a higher order layer.
-    // Each value is marked on the lowest order layer possible, assuming that marks
-    // are added in ascending log value index order.
-    // When searching for a log value one should consider all layers and process
-    // corresponding rows up until the first one where the row mapped to the given
-    // layer is not full.
+    /// Returns the maximum length filter rows are populated up to when using the
+    /// given mapping layer.
+    ///
+    /// A log value can be marked on the map according to a
+    /// given mapping layer if the row mapping on that layer points to a row that
+    /// has not yet reached the maxRowLength belonging to that layer.
+    /// This means that a row that is considered full on a given layer may still be
+    /// extended further on a higher order layer.
+    /// Each value is marked on the lowest order layer possible, assuming that marks
+    /// are added in ascending log value index order.
+    /// When searching for a log value one should consider all layers and process
+    /// corresponding rows up until the first one where the row mapped to the given
+    /// layer is not full.
     pub fn max_row_length(&self, layer_index: u32) -> u32 {
         let log_layer_diff = (layer_index * self.log_layer_diff).min(self.log_maps_per_epoch);
         self.base_row_length() << log_layer_diff
@@ -206,23 +210,7 @@ impl FilterMapParams {
 mod tests {
     use super::*;
     use alloy_primitives::b256;
-
-    #[test]
-    fn test_masked_map_index() {
-        let params = FilterMapParams::default();
-
-        // Layer 0: no masking
-        assert_eq!(params.masked_map_index(0b1111, 0), 0b1111);
-
-        // Layer 1: mask lowest bit
-        assert_eq!(params.masked_map_index(0b1111, 1), 0b1110);
-
-        // Layer 2: mask lowest 2 bits
-        assert_eq!(params.masked_map_index(0b1111, 2), 0b1100);
-
-        // Layer 3: mask lowest 3 bits
-        assert_eq!(params.masked_map_index(0b1111, 3), 0b1000);
-    }
+    use rand::{rng, Rng};
 
     #[test]
     fn test_row_index_distribution() {
@@ -275,5 +263,166 @@ mod tests {
         // Different positions
         let col3 = params.column_index(1, &value);
         assert_eq!(col3 >> 8, 1);
+    }
+
+    #[test]
+    fn test_single_match() {
+        let params = FilterMapParams::default();
+
+        for _ in 0..100_000 {
+            // Generate a row with a single random entry
+            let mut rng = rng();
+            let map_index = rng.random::<u32>();
+
+            let lv_index = ((map_index as u64) << params.log_values_per_map)
+                + rng.random_range(0..params.values_per_map());
+
+            // Generate random hash
+            let mut lv_hash_bytes = [0u8; 32];
+            rng.fill(&mut lv_hash_bytes);
+            let lv_hash = B256::from(lv_hash_bytes);
+
+            let row = FilterRow::from([params.column_index(lv_index, &lv_hash)]);
+            let matches = params.potential_matches(&[row], map_index, &lv_hash);
+
+            assert_eq!(
+                matches.len(),
+                1,
+                "Invalid length of matches (got {}, expected 1)",
+                matches.len()
+            );
+            assert_eq!(
+                matches[0], lv_index,
+                "Incorrect match returned (got {}, expected {})",
+                matches[0], lv_index
+            );
+        }
+    }
+
+    const TEST_PM_COUNT: usize = 50;
+    const TEST_PM_LEN: usize = 1000;
+
+    // TODO: I dont understand this test fully. this has been copied from go-ethereum.
+    #[test]
+    fn test_potential_matches() {
+        let params = FilterMapParams::default();
+        let mut false_positives = 0;
+
+        for _ in 0..TEST_PM_COUNT {
+            let mut rng = rng();
+            let map_index = rng.random::<u32>();
+            let lv_start = (map_index as u64) << params.log_values_per_map;
+            let mut row = FilterRow::new();
+            let mut lv_indices = Vec::with_capacity(TEST_PM_LEN);
+            let mut lv_hashes = Vec::with_capacity(TEST_PM_LEN + 1);
+
+            // Add TEST_PM_LEN single entries with different log value hashes at different indices
+            for _ in 0..TEST_PM_LEN {
+                let lv_index = lv_start + rng.random_range(0..params.values_per_map());
+                lv_indices.push(lv_index);
+
+                let mut lv_hash_bytes = [0u8; 32];
+                rng.fill(&mut lv_hash_bytes);
+                let lv_hash = B256::from(lv_hash_bytes);
+                lv_hashes.push(lv_hash);
+
+                row.push(params.column_index(lv_index, &lv_hash));
+            }
+
+            // Add the same log value hash at the first TEST_PM_LEN log value indices of the map's range
+            let mut common_hash_bytes = [0u8; 32];
+            rng.fill(&mut common_hash_bytes);
+            let common_hash = B256::from(common_hash_bytes);
+            lv_hashes.push(common_hash);
+
+            for lv_index in lv_start..lv_start + TEST_PM_LEN as u64 {
+                row.push(params.column_index(lv_index, &common_hash));
+            }
+
+            // Randomly duplicate some entries
+            for _ in 0..TEST_PM_LEN {
+                let random_entry = row[rng.random_range(0..row.len())];
+                row.push(random_entry);
+            }
+
+            // Randomly mix up order of elements
+            for i in (1..row.len()).rev() {
+                let j = rng.random_range(0..i);
+                row.swap(i, j);
+            }
+
+            // Split up into a list of rows if longer than allowed
+            let mut rows = Vec::new();
+            let mut remaining_row = Some(row);
+            let mut layer_index = 0u32;
+
+            while let Some(mut row) = remaining_row {
+                let max_len = params.max_row_length(layer_index) as usize;
+                if row.len() > max_len {
+                    let rest = row.split_off(max_len);
+                    rows.push(row);
+                    remaining_row = Some(rest);
+                } else {
+                    rows.push(row);
+                    remaining_row = None;
+                }
+                layer_index += 1;
+            }
+
+            // Check retrieved matches while also counting false positives
+            for (i, lv_hash) in lv_hashes.iter().enumerate() {
+                let matches = params.potential_matches(&rows, map_index, lv_hash);
+
+                if i < TEST_PM_LEN {
+                    // Check single entry match
+                    assert!(
+                        !matches.is_empty(),
+                        "Invalid length of matches (got {}, expected >=1)",
+                        matches.len()
+                    );
+
+                    let mut found = false;
+                    for &lvi in &matches {
+                        if lvi == lv_indices[i] {
+                            found = true;
+                        } else {
+                            false_positives += 1;
+                        }
+                    }
+
+                    assert!(
+                        found,
+                        "Expected match not found (got {:?}, expected {})",
+                        matches, lv_indices[i]
+                    );
+                } else {
+                    // Check "long series" match
+                    assert!(
+                        matches.len() >= TEST_PM_LEN,
+                        "Invalid length of matches (got {}, expected >={})",
+                        matches.len(),
+                        TEST_PM_LEN
+                    );
+
+                    // Since results are ordered, first TEST_PM_LEN entries should match exactly
+                    for j in 0..TEST_PM_LEN {
+                        assert_eq!(
+                            matches[j],
+                            lv_start + j as u64,
+                            "Incorrect match at index {} (got {}, expected {})",
+                            j,
+                            matches[j],
+                            lv_start + j as u64
+                        );
+                    }
+
+                    // The rest are false positives
+                    false_positives += matches.len() - TEST_PM_LEN;
+                }
+            }
+        }
+
+        // The test doesn't fail on false positives, just counts them
+        println!("Total false positives: {}", false_positives);
     }
 }
