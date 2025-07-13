@@ -18,6 +18,22 @@ pub enum FilterError {
     /// Invalid block range specified.
     #[error("invalid block range: {0} > {1}")]
     InvalidRange(u64, u64),
+    
+    /// Insufficient layers in filter map row alternatives.
+    #[error("insufficient filter map layers for map {0}")]
+    InsufficientLayers(u32),
+    
+    /// Corrupted filter map data detected.
+    #[error("corrupted filter map data: {0}")]
+    CorruptedData(String),
+    
+    /// Maximum layer limit exceeded.
+    #[error("maximum layer limit ({0}) exceeded")]
+    MaxLayersExceeded(u32),
+    
+    /// Invalid filter map parameters.
+    #[error("invalid filter map parameters: {0}")]
+    InvalidParameters(String),
 }
 
 /// Result type for FilterMaps operations.
@@ -83,11 +99,7 @@ impl MatchOrderStats {
     pub fn add(&self, empty: bool, layer_index: u32) {
         use std::sync::atomic::Ordering::Relaxed;
         
-        // Ignore empty results from higher layers as they're not representative
-        if empty && layer_index != 0 {
-            return;
-        }
-        
+        // Track all evaluations for accurate statistics
         self.total_count.fetch_add(1, Relaxed);
         if !empty {
             self.non_empty_count.fetch_add(1, Relaxed);
@@ -221,11 +233,11 @@ mod tests {
         stats.add(false, 0); // Non-empty at layer 0 (cost=1)
         stats.add(true, 0);  // Empty at layer 0 (cost=1)
         stats.add(false, 1); // Non-empty at layer 1 (cost=2)
-        stats.add(true, 1);  // Empty at layer 1 (ignored)
+        stats.add(true, 1);  // Empty at layer 1 (cost=2)
         
-        assert_eq!(stats.total_count.load(Relaxed), 3);
+        assert_eq!(stats.total_count.load(Relaxed), 4);
         assert_eq!(stats.non_empty_count.load(Relaxed), 2);
-        assert_eq!(stats.total_cost.load(Relaxed), 4); // 1 + 1 + 2
+        assert_eq!(stats.total_cost.load(Relaxed), 6); // 1 + 1 + 2 + 2
         
         // Test merge
         let other = MatchOrderStats::default();
@@ -234,8 +246,8 @@ mod tests {
         other.total_cost.store(3, Relaxed);
         stats.merge(&other);
         
-        assert_eq!(stats.total_count.load(Relaxed), 5);
+        assert_eq!(stats.total_count.load(Relaxed), 6);
         assert_eq!(stats.non_empty_count.load(Relaxed), 3);
-        assert_eq!(stats.total_cost.load(Relaxed), 7); // 4 + 3
+        assert_eq!(stats.total_cost.load(Relaxed), 9); // 6 + 3
     }
 }

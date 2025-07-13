@@ -6,6 +6,10 @@ use super::params::FilterMapParams;
 /// Used as initial capacity to reduce allocations.
 pub const EXPECTED_MATCHES: usize = 8;
 
+/// Maximum number of layers allowed in filter maps.
+/// This prevents infinite loops in case of corrupted data.
+pub const MAX_LAYERS: u32 = 16;
+
 /// Default parameters used on mainnet
 pub const DEFAULT_PARAMS: FilterMapParams = FilterMapParams {
     log_map_height: 16,

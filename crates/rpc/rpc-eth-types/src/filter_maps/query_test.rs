@@ -297,13 +297,15 @@ mod tests {
         provider.add_filter_row(map_index, addr_row, 0, vec![addr_col]);
         
         // Topic1 at position 1 (log value 51)
-        let topic1_row = provider.params.row_index(map_index, 0, &topic1);
-        let topic1_col = provider.params.column_index(51, &topic1);
+        let topic1_value = topic_to_log_value(topic1);
+        let topic1_row = provider.params.row_index(map_index, 0, &topic1_value);
+        let topic1_col = provider.params.column_index(51, &topic1_value);
         provider.add_filter_row(map_index, topic1_row, 0, vec![topic1_col]);
         
         // Topic2 at position 2 (log value 52)
-        let topic2_row = provider.params.row_index(map_index, 0, &topic2);
-        let topic2_col = provider.params.column_index(52, &topic2);
+        let topic2_value = topic_to_log_value(topic2);
+        let topic2_row = provider.params.row_index(map_index, 0, &topic2_value);
+        let topic2_col = provider.params.column_index(52, &topic2_value);
         provider.add_filter_row(map_index, topic2_row, 0, vec![topic2_col]);
         
         // Query with specific topics

@@ -124,6 +124,13 @@ impl Matcher {
         // Process layers until complete
         let mut layer = 0;
         while !state.is_complete() {
+            // Check layer limit to prevent infinite loops
+            if layer >= crate::filter_maps::constants::MAX_LAYERS {
+                return Err(crate::filter_maps::types::FilterError::MaxLayersExceeded(
+                    crate::filter_maps::constants::MAX_LAYERS,
+                ));
+            }
+            
             let layer_results = state.process_layer(layer)?;
             all_results.extend(layer_results);
             layer += 1;
@@ -398,7 +405,7 @@ impl MatcherState {
                 if (filter_row.len() as u32) < params.max_row_length(layer) {
                     // Process matches
                     let process_start = Instant::now();
-                    let matches = params.potential_matches(rows, map_index, value);
+                    let matches = params.potential_matches(rows, map_index, value)?;
                     let process_duration = process_start.elapsed();
 
                     // Update statistics
@@ -804,19 +811,66 @@ fn should_eval_base_first(
 
 /// Updates match order statistics after evaluating a matcher.
 fn update_match_order_stats(stats: &Arc<MatchOrderStats>, is_empty: bool, layer: u32) {
-    if !is_empty || layer == 0 {
-        stats.total_count.fetch_add(1, Ordering::Relaxed);
-        if !is_empty {
-            stats.non_empty_count.fetch_add(1, Ordering::Relaxed);
-        }
-        stats.total_cost.fetch_add((layer + 1) as u64, Ordering::Relaxed);
+    // Always update statistics for accurate tracking
+    stats.total_count.fetch_add(1, Ordering::Relaxed);
+    if !is_empty {
+        stats.non_empty_count.fetch_add(1, Ordering::Relaxed);
     }
+    stats.total_cost.fetch_add((layer + 1) as u64, Ordering::Relaxed);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[test]
+    fn test_max_layers_limit() {
+        use crate::filter_maps::{FilterMapParams, FilterRow};
+        use alloy_primitives::{b256, BlockNumber};
+        use alloy_rpc_types_eth::Log;
+        use reth_errors::ProviderResult;
+        
+        // Create a provider that always returns full rows
+        struct AlwaysFullProvider {
+            params: FilterMapParams,
+        }
+        
+        impl FilterMapProvider for AlwaysFullProvider {
+            fn params(&self) -> &FilterMapParams {
+                &self.params
+            }
+            
+            fn block_to_log_index(&self, _: BlockNumber) -> ProviderResult<u64> {
+                Ok(0)
+            }
+            
+            fn get_filter_rows(&self, map_indices: &[u32], _: u32, layer: u32) -> ProviderResult<Vec<FilterRow>> {
+                // Always return rows that are exactly at max length
+                let max_len = self.params.max_row_length(layer) as usize;
+                let row = vec![0u32; max_len];
+                Ok(vec![row; map_indices.len()])
+            }
+            
+            fn get_log(&self, _: u64) -> ProviderResult<Option<Log>> {
+                Ok(None)
+            }
+        }
+        
+        let provider = Arc::new(AlwaysFullProvider {
+            params: crate::filter_maps::constants::DEFAULT_PARAMS,
+        });
+        
+        let value = b256!("0000000000000000000000000000000000000000000000000000000000000001");
+        let matcher = Matcher::single(provider, value);
+        
+        // This should hit the MAX_LAYERS limit and return an error
+        let result = matcher.process(&[0]);
+        assert!(matches!(
+            result,
+            Err(crate::filter_maps::types::FilterError::MaxLayersExceeded(_))
+        ));
+    }
+    
     #[test]
     fn test_merge_potential_matches() {
         // Empty input

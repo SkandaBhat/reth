@@ -7,7 +7,7 @@ use fnv::FnvHasher;
 use sha2::{Digest, Sha256};
 use std::hash::Hasher;
 
-use crate::filter_maps::{constants::EXPECTED_MATCHES, FilterRow};
+use crate::filter_maps::{constants::EXPECTED_MATCHES, types::FilterError, FilterRow};
 
 /// A strictly monotonically increasing list of log value indices in the range of a
 /// filter map that are potential matches for certain filter criteria.
@@ -68,6 +68,27 @@ impl FilterMapParams {
     pub fn base_row_length(&self) -> u32 {
         ((self.values_per_map() * self.base_row_length_ratio as u64) / self.map_height() as u64)
             as u32
+    }
+    
+    /// Calculate the minimum number of layers required to store all values.
+    ///
+    /// This is based on the average row length and the maximum row length
+    /// allowed at each layer.
+    pub fn required_layers(&self) -> u32 {
+        // Average row length is values_per_map / map_height
+        let avg_row_length = (self.values_per_map() as f64) / (self.map_height() as f64);
+        
+        // Find the layer where max_row_length >= avg_row_length
+        let mut layer = 0u32;
+        while (self.max_row_length(layer) as f64) < avg_row_length {
+            layer += 1;
+            if layer >= crate::filter_maps::constants::MAX_LAYERS {
+                break;
+            }
+        }
+        
+        // Add one more layer for safety
+        (layer + 1).min(crate::filter_maps::constants::MAX_LAYERS)
     }
 
     /// Calculate the row index in which the given log value should be marked
@@ -158,7 +179,7 @@ impl FilterMapParams {
         rows: &[FilterRow],
         map_index: u32,
         log_value: &B256,
-    ) -> PotentialMatches {
+    ) -> Result<PotentialMatches, FilterError> {
         let mut results = Vec::with_capacity(EXPECTED_MATCHES);
         let map_first = (map_index as u64) << self.log_values_per_map;
 
@@ -183,28 +204,28 @@ impl FilterMapParams {
 
             // If we're at the last row and it's full, we have insufficient rows
             if layer_index == rows.len() - 1 {
-                panic!("potentialMatches: insufficient list of row alternatives");
+                return Err(FilterError::InsufficientLayers(map_index));
             }
         }
 
         // Sort and deduplicate results
         results.sort_unstable();
         results.dedup();
-        results
+        Ok(results)
     }
 }
 
-// /// Calculate the global row index for database storage.
-// ///
-// /// This ensures rows from the same map are stored together.
-// pub fn map_row_index(map_index: u32, row_index: u32, params: &FilterMapParams) -> u64 {
-//     ((map_index as u64) * (params.map_height() as u64)) + (row_index as u64)
-// }
+/// Calculate the global row index for database storage.
+///
+/// This ensures rows from the same map are stored together.
+pub fn map_row_index(map_index: u32, row_index: u32, params: &FilterMapParams) -> u64 {
+    ((map_index as u64) * (params.map_height() as u64)) + (row_index as u64)
+}
 
-// /// Get the map index from a log value index.
-// pub fn map_index_from_lv_index(lv_index: u64, params: &FilterMapParams) -> u32 {
-//     (lv_index / params.values_per_map()) as u32
-// }
+/// Get the map index from a log value index.
+pub fn map_index_from_lv_index(lv_index: u64, params: &FilterMapParams) -> u32 {
+    (lv_index >> params.log_values_per_map) as u32
+}
 
 #[cfg(test)]
 mod tests {
@@ -283,7 +304,7 @@ mod tests {
             let lv_hash = B256::from(lv_hash_bytes);
 
             let row = FilterRow::from([params.column_index(lv_index, &lv_hash)]);
-            let matches = params.potential_matches(&[row], map_index, &lv_hash);
+            let matches = params.potential_matches(&[row], map_index, &lv_hash).unwrap();
 
             assert_eq!(
                 matches.len(),
@@ -371,7 +392,7 @@ mod tests {
 
             // Check retrieved matches while also counting false positives
             for (i, lv_hash) in lv_hashes.iter().enumerate() {
-                let matches = params.potential_matches(&rows, map_index, lv_hash);
+                let matches = params.potential_matches(&rows, map_index, lv_hash).unwrap();
 
                 if i < TEST_PM_LEN {
                     // Check single entry match
@@ -424,5 +445,84 @@ mod tests {
 
         // The test doesn't fail on false positives, just counts them
         println!("Total false positives: {}", false_positives);
+    }
+    
+    #[test]
+    fn test_insufficient_layers_error() {
+        let params = FilterMapParams::default();
+        let value = b256!("0000000000000000000000000000000000000000000000000000000000000001");
+        
+        // Create rows where the last one is full
+        let mut rows = Vec::new();
+        for layer in 0..3 {
+            let max_len = params.max_row_length(layer) as usize;
+            rows.push(vec![0u32; max_len]); // Full row
+        }
+        
+        // This should return an error because all rows are full
+        let result = params.potential_matches(&rows, 0, &value);
+        assert!(matches!(result, Err(FilterError::InsufficientLayers(0))));
+    }
+    
+    #[test]
+    fn test_required_layers() {
+        let params = FilterMapParams::default();
+        let layers = params.required_layers();
+        
+        // Should have reasonable number of layers
+        assert!(layers > 0);
+        assert!(layers <= crate::filter_maps::constants::MAX_LAYERS);
+        
+        // The max row length at the last layer should be >= average row length
+        let avg_row_length = (params.values_per_map() as f64) / (params.map_height() as f64);
+        let max_at_last_layer = params.max_row_length(layers - 1) as f64;
+        assert!(
+            max_at_last_layer >= avg_row_length,
+            "Max row length at layer {} ({}) should be >= average row length ({})",
+            layers - 1,
+            max_at_last_layer,
+            avg_row_length
+        );
+    }
+    
+    #[test]
+    fn test_map_row_index() {
+        let params = FilterMapParams::default();
+        
+        // First row of first map
+        assert_eq!(map_row_index(0, 0, &params), 0);
+        
+        // Last row of first map
+        let last_row = params.map_height() - 1;
+        assert_eq!(map_row_index(0, last_row, &params), last_row as u64);
+        
+        // First row of second map
+        assert_eq!(map_row_index(1, 0, &params), params.map_height() as u64);
+        
+        // Random row in random map
+        let map_idx = 42u32;
+        let row_idx = 1337u32;
+        let expected = (map_idx as u64) * (params.map_height() as u64) + (row_idx as u64);
+        assert_eq!(map_row_index(map_idx, row_idx, &params), expected);
+    }
+    
+    #[test]
+    fn test_map_index_from_lv_index() {
+        let params = FilterMapParams::default();
+        
+        // First log value should be in map 0
+        assert_eq!(map_index_from_lv_index(0, &params), 0);
+        
+        // Last log value of first map should still be in map 0
+        let last_lv_first_map = params.values_per_map() - 1;
+        assert_eq!(map_index_from_lv_index(last_lv_first_map, &params), 0);
+        
+        // First log value of second map should be in map 1
+        assert_eq!(map_index_from_lv_index(params.values_per_map(), &params), 1);
+        
+        // Random log value
+        let lv_index = 123456789u64;
+        let expected_map = (lv_index >> params.log_values_per_map) as u32;
+        assert_eq!(map_index_from_lv_index(lv_index, &params), expected_map);
     }
 }

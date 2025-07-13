@@ -14,7 +14,7 @@ mod any_test;
 pub use constants::{DEFAULT_PARAMS, EXPECTED_MATCHES, RANGE_TEST_PARAMS};
 pub use matcher::{FilterMapProvider, Matcher};
 pub use params::FilterMapParams;
-pub use query::query_logs;
+pub use query::{query_logs, verify_log_matches_filter};
 pub use types::{
     FilterError, FilterResult, LogFilter, MatchOrderStats, MatcherResult, PotentialMatches,
     RuntimeStats, RuntimeStatsSummary,
