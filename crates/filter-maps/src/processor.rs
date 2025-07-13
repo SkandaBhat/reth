@@ -3,7 +3,7 @@
 //! This module provides the main processor that coordinates the building of filter
 //! maps from blocks and logs.
 
-use super::{
+use crate::{
     builder::{FilterMapBuilder, LogValueIterator, RenderedMap},
     params::FilterMapParams,
     types::{FilterError, FilterResult},
@@ -131,14 +131,10 @@ impl FilterMapsProcessor {
     pub fn finalize_current_map(&mut self) -> FilterResult<Option<RenderedMap>> {
         let map_index = self.builder.map_index();
 
-        // Find first and last blocks in this map
-        let first_block = None;
-        let last_block = None;
-        let block_lv_pointers = Vec::new();
-
         // TODO: In the real implementation, we would read block lv pointers
         // from storage to determine which blocks are in this map.
         // For now, we'll use a simplified approach.
+        let block_lv_pointers = Vec::new();
 
         // Create rendered map
         let filter_map = std::mem::replace(
@@ -156,8 +152,8 @@ impl FilterMapsProcessor {
         let rendered = RenderedMap {
             filter_map,
             map_index,
-            first_block: first_block.unwrap_or(self.indexed_range.0),
-            last_block: last_block.unwrap_or(self.indexed_range.1),
+            first_block: self.indexed_range.0,
+            last_block: self.indexed_range.1,
             last_block_hash: self
                 .block_hashes
                 .get(&self.indexed_range.1)
@@ -176,17 +172,17 @@ impl FilterMapsProcessor {
     }
 
     /// Gets the current log value index.
-    pub fn current_lv_index(&self) -> u64 {
+    pub const fn current_lv_index(&self) -> u64 {
         self.iterator.lv_index
     }
 
     /// Gets the current block number being processed.
-    pub fn current_block(&self) -> BlockNumber {
+    pub const fn current_block(&self) -> BlockNumber {
         self.iterator.block_number
     }
 
     /// Gets the range of blocks that have been indexed.
-    pub fn indexed_range(&self) -> (BlockNumber, BlockNumber) {
+    pub const fn indexed_range(&self) -> (BlockNumber, BlockNumber) {
         self.indexed_range
     }
 }
@@ -212,8 +208,9 @@ mod tests {
         }
     }
 
-    fn create_test_receipt(logs: Vec<Log>) -> Receipt {
-        Receipt { status: true, cumulative_gas_used: 0, logs }
+    fn create_test_receipt(logs: Vec<alloy_primitives::Log>) -> Receipt {
+        use alloy_consensus::Eip658Value;
+        Receipt { status: Eip658Value::Eip658(true), cumulative_gas_used: 0, logs }
     }
 
     #[test]
@@ -226,7 +223,7 @@ mod tests {
             address!("1234567890123456789012345678901234567890"),
             vec![b256!("0000000000000000000000000000000000000000000000000000000000000001")],
         );
-        let receipt = create_test_receipt(vec![log]);
+        let receipt = create_test_receipt(vec![log.inner]);
 
         // Process the block
         processor.process_block(1, B256::ZERO, &[receipt]).unwrap();
@@ -250,7 +247,7 @@ mod tests {
                     b256!("0000000000000000000000000000000000000000000000000000000000000002"),
                 ],
             );
-            let receipt = create_test_receipt(vec![log]);
+            let receipt = create_test_receipt(vec![log.inner]);
             processor.process_block(block_num, B256::ZERO, &[receipt]).unwrap();
         }
 
@@ -263,8 +260,12 @@ mod tests {
     #[test]
     fn test_processor_map_finalization() {
         // Use smaller map size for testing
-        let mut params = FilterMapParams::default();
-        params.log_values_per_map = 4; // 16 values per map
+        let mut params = FilterMapParams {
+            log_values_per_map: 4, // 16 values per map
+            ..Default::default()
+        };
+        params.log_map_height = 6; // 64 rows instead of default
+        params.base_row_length_ratio = 4; // Increase row capacity
 
         let mut processor = FilterMapsProcessor::new(params, 1, 0);
 
@@ -277,7 +278,7 @@ mod tests {
                     b256!("0000000000000000000000000000000000000000000000000000000000000002"),
                 ],
             );
-            let receipt = create_test_receipt(vec![log]);
+            let receipt = create_test_receipt(vec![log.inner]);
             processor.process_block(block_num, B256::ZERO, &[receipt]).unwrap();
         }
 

@@ -3,7 +3,7 @@
 //! This module implements the core logic for building filter maps from logs
 //! according to EIP-7745.
 
-use super::{
+use crate::{
     constants::MAX_LAYERS,
     params::FilterMapParams,
     types::{FilterError, FilterResult},
@@ -37,7 +37,7 @@ pub struct LogValueIterator {
 
 impl LogValueIterator {
     /// Creates a new iterator starting at the given position.
-    pub fn new(block_number: BlockNumber, lv_index: u64) -> Self {
+    pub const fn new(block_number: BlockNumber, lv_index: u64) -> Self {
         Self {
             lv_index,
             block_number,
@@ -60,7 +60,7 @@ impl LogValueIterator {
             Some(address_value(&log.address()))
         } else {
             let topic_idx = self.topic_index - 1;
-            log.topics().get(topic_idx).map(|t| topic_value(t))
+            log.topics().get(topic_idx).map(topic_value)
         }
     }
 
@@ -94,7 +94,7 @@ impl LogValueIterator {
     }
 
     /// Moves to the start of the next block.
-    pub fn next_block(&mut self) {
+    pub const fn next_block(&mut self) {
         self.block_number += 1;
         self.tx_index = 0;
         self.log_index = 0;
@@ -116,7 +116,7 @@ impl LogValueIterator {
     }
 
     /// Skips to the next map boundary.
-    pub fn skip_to_boundary(&mut self, values_per_map: u64) {
+    pub const fn skip_to_boundary(&mut self, values_per_map: u64) {
         let next_boundary = ((self.lv_index / values_per_map) + 1) * values_per_map;
         self.lv_index = next_boundary;
     }
@@ -182,7 +182,7 @@ impl FilterMapBuilder {
     }
 
     /// Checks if the current map should be finalized.
-    pub fn should_finalize(&self, lv_index: u64) -> bool {
+    pub const fn should_finalize(&self, lv_index: u64) -> bool {
         lv_index >= (self.map_index as u64 + 1) << self.params.log_values_per_map
     }
 
@@ -192,7 +192,7 @@ impl FilterMapBuilder {
     }
 
     /// Gets the current map index.
-    pub fn map_index(&self) -> u32 {
+    pub const fn map_index(&self) -> u32 {
         self.map_index
     }
 }
@@ -217,7 +217,7 @@ pub struct RenderedMap {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy_primitives::{address, b256, bytes, LogData};
+    use alloy_primitives::{address, b256, bytes, Address, LogData};
 
     fn create_test_log(address: Address, topics: Vec<B256>) -> Log {
         Log {
@@ -281,7 +281,7 @@ mod tests {
     #[test]
     fn test_filter_map_builder() {
         let params = FilterMapParams::default();
-        let mut builder = FilterMapBuilder::new(params.clone(), 0);
+        let mut builder = FilterMapBuilder::new(params, 0);
 
         // Add some log values
         let addr_value = address_value(&address!("1234567890123456789012345678901234567890"));

@@ -1,19 +1,19 @@
-//! Core types used by the FilterMaps implementation.
+//! Core types used by the `FilterMaps` implementation.
 
 use alloy_primitives::{Address, B256};
 use std::sync::atomic::AtomicU64;
 
-/// Errors that can occur when using FilterMaps.
+/// Errors that can occur when using `FilterMaps`.
 #[derive(Debug, thiserror::Error)]
 pub enum FilterError {
-    /// The filter matches all logs, which is not supported by FilterMaps.
+    /// The filter matches all logs, which is not supported by `FilterMaps`.
     /// Use legacy filtering for this case.
     #[error("filter matches all logs")]
     MatchAll,
 
-    /// Provider error occurred.
-    #[error("provider error: {0}")]
-    Provider(#[from] reth_errors::ProviderError),
+    /// Database error occurred.
+    #[error("database error: {0}")]
+    Database(String),
 
     /// Invalid block range specified.
     #[error("invalid block range: {0} > {1}")]
@@ -37,11 +37,26 @@ pub enum FilterError {
 
     /// Invalid block sequence.
     #[error("invalid block sequence: expected {expected}, got {actual}")]
-    InvalidBlockSequence { expected: u64, actual: u64 },
+    InvalidBlockSequence {
+        /// The expected block number.
+        expected: u64,
+        /// The actual block number received.
+        actual: u64,
+    },
+
+    /// Provider error occurred.
+    #[error("provider error: {0}")]
+    Provider(String),
 }
 
-/// Result type for FilterMaps operations.
+/// Result type for `FilterMaps` operations.
 pub type FilterResult<T> = Result<T, FilterError>;
+
+impl From<reth_errors::ProviderError> for FilterError {
+    fn from(err: reth_errors::ProviderError) -> Self {
+        Self::Provider(err.to_string())
+    }
+}
 
 /// A list of potential matching log value indices.
 ///
@@ -71,7 +86,7 @@ pub struct LogFilter {
 
 impl LogFilter {
     /// Creates a new log filter with the given addresses and topics.
-    pub fn new(addresses: Vec<Address>, topics: Vec<Vec<B256>>) -> Self {
+    pub const fn new(addresses: Vec<Address>, topics: Vec<Vec<B256>>) -> Self {
         Self { addresses, topics }
     }
 
@@ -111,7 +126,7 @@ impl MatchOrderStats {
     }
 
     /// Merges another set of statistics into this one.
-    pub fn merge(&self, other: &MatchOrderStats) {
+    pub fn merge(&self, other: &Self) {
         use std::sync::atomic::Ordering::Relaxed;
 
         self.total_count.fetch_add(other.total_count.load(Relaxed), Relaxed);
@@ -194,16 +209,27 @@ impl RuntimeStats {
 /// Non-atomic snapshot of runtime statistics.
 #[derive(Debug, Clone)]
 pub struct RuntimeStatsSummary {
+    /// Number of first layer fetch operations.
     pub fetch_first_count: u64,
+    /// Time spent fetching first layers (nanoseconds).
     pub fetch_first_duration_ns: u64,
+    /// Rows fetched from first layer.
     pub fetch_first_rows: u64,
+    /// Number of additional layer fetch operations.
     pub fetch_more_count: u64,
+    /// Time spent fetching additional layers (nanoseconds).
     pub fetch_more_duration_ns: u64,
+    /// Rows fetched from additional layers.
     pub fetch_more_rows: u64,
+    /// Number of process operations.
     pub process_count: u64,
+    /// Time spent processing matches (nanoseconds).
     pub process_duration_ns: u64,
+    /// Matches found.
     pub process_matches: u64,
+    /// Number of logs fetched.
     pub get_log_count: u64,
+    /// Time spent fetching logs (nanoseconds).
     pub get_log_duration_ns: u64,
 }
 

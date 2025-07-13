@@ -43,6 +43,7 @@ members = [
     "crates/ethereum/primitives/",
     "crates/ethereum/reth/",
     "crates/etl/",
+    "crates/filter-maps/",
     "crates/evm/evm",
     "crates/evm/execution-errors",
     "crates/evm/execution-types",
@@ -365,6 +366,7 @@ reth-ethereum-payload-builder = { path = "crates/ethereum/payload" }
 reth-ethereum-primitives = { path = "crates/ethereum/primitives", default-features = false }
 reth-ethereum = { path = "crates/ethereum/reth" }
 reth-etl = { path = "crates/etl" }
+reth-filter-maps = { path = "crates/filter-maps" }
 reth-evm = { path = "crates/evm/evm", default-features = false }
 reth-evm-ethereum = { path = "crates/ethereum/evm", default-features = false }
 reth-optimism-evm = { path = "crates/optimism/evm", default-features = false }

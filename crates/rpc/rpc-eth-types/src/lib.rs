@@ -12,7 +12,6 @@ pub mod builder;
 pub mod cache;
 pub mod error;
 pub mod fee_history;
-pub mod filter_maps;
 pub mod gas_oracle;
 pub mod id_provider;
 pub mod logs_utils;

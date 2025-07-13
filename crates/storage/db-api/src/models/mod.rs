@@ -9,6 +9,7 @@ use alloy_genesis::GenesisAccount;
 use alloy_primitives::{Address, Bytes, Log, B256, U256};
 use reth_codecs::{add_arbitrary_tests, Compact};
 use reth_ethereum_primitives::{Receipt, TransactionSigned, TxType};
+use reth_filter_maps::storage::{FilterMapLastBlock, FilterMapsRange, StoredFilterMapRow};
 use reth_primitives_traits::{Account, Bytecode, StorageEntry};
 use reth_prune_types::{PruneCheckpoint, PruneSegment};
 use reth_stages_types::StageCheckpoint;
@@ -17,14 +18,12 @@ use serde::{Deserialize, Serialize};
 
 pub mod accounts;
 pub mod blocks;
-pub mod filter_maps;
 pub mod integer_list;
 pub mod sharded_key;
 pub mod storage_sharded_key;
 
 pub use accounts::*;
 pub use blocks::*;
-pub use filter_maps::*;
 pub use integer_list::IntegerList;
 pub use reth_db_models::{
     AccountBeforeTx, ClientVersion, StaticFileBlockWithdrawals, StoredBlockBodyIndices,
@@ -236,9 +235,9 @@ impl_compression_for_compact!(
     PruneCheckpoint,
     ClientVersion,
     // Filter maps types
-    BlockLvPointer,
     FilterMapLastBlock,
     FilterMapsRange,
+    StoredFilterMapRow,
     // Non-DB
     GenesisAccount
 );

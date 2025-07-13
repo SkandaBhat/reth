@@ -2,36 +2,15 @@
 //!
 //! This module defines the traits for reading and writing filter map data.
 
+use alloc::vec::Vec;
 use alloy_primitives::BlockNumber;
+use reth_filter_maps::storage::{FilterMapLastBlock, FilterMapsRange, StoredFilterMapRow};
 use reth_storage_errors::provider::ProviderResult;
 
-// TODO: In the storage PR, import these from reth-db-api when the feature is enabled:
-// #[cfg(feature = "db-api")]
-// use reth_db_api::models::{FilterMapRow, FilterMapLastBlock, FilterMapsRange};
-
-// For now, use temporary type aliases to define the trait interfaces
-/// Temporary type alias for filter map row data.
-pub type FilterMapRow = Vec<u32>;
-
-/// Temporary struct for filter map last block info.
-#[derive(Debug, Clone)]
-pub struct FilterMapLastBlock {
-    /// The last block number in the map.
-    pub block_number: BlockNumber,
-    /// The hash of the last block.
-    pub block_hash: alloy_primitives::B256,
-}
-
-/// Temporary struct for filter maps metadata.
-#[derive(Debug, Clone)]
-pub struct FilterMapsRange {
-    /// Whether the head block has been indexed.
-    pub head_indexed: bool,
-    /// First block number in the indexed range.
-    pub blocks_first: BlockNumber,
-    /// One past the last block number in the indexed range.
-    pub blocks_after_last: BlockNumber,
-}
+/// Type alias for filter map rows.
+///
+/// For the provider traits, we use `StoredFilterMapRow` directly.
+pub type FilterMapRow = StoredFilterMapRow;
 
 /// Provider trait for reading filter map data.
 pub trait FilterMapsReader: Send + Sync {

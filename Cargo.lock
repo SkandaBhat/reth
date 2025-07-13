@@ -7592,6 +7592,7 @@ dependencies = [
  "reth-codecs",
  "reth-db-models",
  "reth-ethereum-primitives",
+ "reth-filter-maps",
  "reth-optimism-primitives",
  "reth-primitives-traits",
  "reth-prune-types",
@@ -8534,6 +8535,26 @@ dependencies = [
  "reth-primitives-traits",
  "serde",
  "serde_with",
+]
+
+[[package]]
+name = "reth-filter-maps"
+version = "1.5.0"
+dependencies = [
+ "alloy-consensus",
+ "alloy-primitives",
+ "alloy-rpc-types-eth",
+ "arbitrary",
+ "fnv",
+ "modular-bitfield",
+ "proptest",
+ "rand 0.9.1",
+ "reth-codecs",
+ "reth-errors",
+ "serde",
+ "sha2 0.10.9",
+ "test-fuzz",
+ "thiserror 2.0.12",
 ]
 
 [[package]]
@@ -10062,7 +10083,6 @@ dependencies = [
  "alloy-rpc-types-eth",
  "alloy-sol-types",
  "derive_more",
- "fnv",
  "futures",
  "itertools 0.14.0",
  "jsonrpsee-core",
@@ -10089,7 +10109,6 @@ dependencies = [
  "schnellru",
  "serde",
  "serde_json",
- "sha2 0.10.9",
  "thiserror 2.0.12",
  "tokio",
  "tokio-stream",
@@ -10166,6 +10185,7 @@ dependencies = [
  "reth-execution-errors",
  "reth-execution-types",
  "reth-exex",
+ "reth-filter-maps",
  "reth-fs-util",
  "reth-network-p2p",
  "reth-network-peers",
@@ -10310,6 +10330,7 @@ dependencies = [
  "reth-db-models",
  "reth-ethereum-primitives",
  "reth-execution-types",
+ "reth-filter-maps",
  "reth-primitives-traits",
  "reth-prune-types",
  "reth-stages-types",

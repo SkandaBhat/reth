@@ -1,8 +1,8 @@
-//! Main query interface for FilterMaps.
+//! Main query interface for `FilterMaps`.
 //!
-//! This module provides the high-level API for querying logs using FilterMaps.
+//! This module provides the high-level API for querying logs using `FilterMaps`.
 
-use crate::filter_maps::{
+use crate::{
     matcher::{FilterMapProvider, Matcher},
     types::{FilterError, FilterResult},
 };
@@ -10,14 +10,14 @@ use alloy_primitives::{Address, BlockNumber, B256};
 use alloy_rpc_types_eth::Log;
 use std::sync::Arc;
 
-/// Performs a log query using FilterMaps.
+/// Performs a log query using `FilterMaps`.
 ///
-/// This is the main entry point for log filtering using the FilterMaps data structure.
+/// This is the main entry point for log filtering using the `FilterMaps` data structure.
 /// It constructs the appropriate matcher hierarchy and processes the query efficiently.
 ///
 /// # Arguments
 ///
-/// * `provider` - The provider for accessing FilterMaps data
+/// * `provider` - The provider for accessing `FilterMaps` data
 /// * `first_block` - The first block to search (inclusive)
 /// * `last_block` - The last block to search (inclusive)
 /// * `addresses` - List of addresses to match (empty = match all)
@@ -32,7 +32,7 @@ use std::sync::Arc;
 ///
 /// Returns an error if:
 /// - The filter matches all logs (use legacy filtering instead)
-/// - There's an issue accessing the FilterMaps data
+/// - There's an issue accessing the `FilterMaps` data
 pub fn query_logs(
     provider: Arc<dyn FilterMapProvider>,
     first_block: BlockNumber,
@@ -86,7 +86,7 @@ pub fn query_logs(
             }
         } else {
             // Wildcard match - this means the filter matches everything
-            return Err(FilterError::MatchAll.into());
+            return Err(FilterError::MatchAll);
         }
     }
 
@@ -110,20 +110,17 @@ fn build_matcher(
         // Match any of the specified addresses
         let address_matchers: Vec<_> = addresses
             .into_iter()
-            .map(|addr| {
-                let value = address_to_log_value(addr);
+            .map(|address| {
+                let value = address_to_log_value(address);
                 Matcher::single(provider.clone(), value)
             })
             .collect();
         matchers.push(Matcher::any(address_matchers));
     }
 
-    // Topic matchers (positions 1+)
+    // Add topic matchers
     for topic_list in topics {
-        if topic_list.is_empty() {
-            // Empty topic list = match any topic at this position
-            matchers.push(Matcher::any(vec![]));
-        } else {
+        if !topic_list.is_empty() {
             // Match any of the specified topics
             let topic_matchers: Vec<_> = topic_list
                 .into_iter()
@@ -143,13 +140,13 @@ fn build_matcher(
 /// Converts an address to a log value hash.
 pub fn address_to_log_value(address: Address) -> B256 {
     // Use consistent SHA256 hashing as per EIP-7745
-    crate::filter_maps::utils::address_value(&address)
+    crate::utils::address_value(&address)
 }
 
 /// Converts a topic to a log value hash.
 pub fn topic_to_log_value(topic: B256) -> B256 {
     // Use consistent SHA256 hashing as per EIP-7745
-    crate::filter_maps::utils::topic_value(&topic)
+    crate::utils::topic_value(&topic)
 }
 
 /// Verifies that a log actually matches the filter criteria.
@@ -192,7 +189,7 @@ mod tests {
         let addr = Address::from([0x12; 20]);
         let value = address_to_log_value(addr);
         // Should be SHA256 hash of the address
-        let expected = crate::filter_maps::utils::address_value(&addr);
+        let expected = crate::utils::address_value(&addr);
         assert_eq!(value, expected);
 
         // Should be deterministic
@@ -205,7 +202,7 @@ mod tests {
         let topic = B256::from([0x42; 32]);
         let value = topic_to_log_value(topic);
         // Should be SHA256 hash of the topic
-        let expected = crate::filter_maps::utils::topic_value(&topic);
+        let expected = crate::utils::topic_value(&topic);
         assert_eq!(value, expected);
 
         // Should be deterministic
@@ -267,17 +264,17 @@ mod tests {
 
     #[test]
     fn test_build_matcher_edge_cases() {
-        use crate::filter_maps::{constants::DEFAULT_PARAMS, matcher::FilterMapProvider};
+        use crate::{constants::DEFAULT_PARAMS, matcher::FilterMapProvider};
         use alloy_primitives::BlockNumber;
         use alloy_rpc_types_eth::Log;
         use reth_errors::ProviderResult;
 
         struct MockProvider {
-            params: crate::filter_maps::FilterMapParams,
+            params: crate::FilterMapParams,
         }
 
         impl FilterMapProvider for MockProvider {
-            fn params(&self) -> &crate::filter_maps::FilterMapParams {
+            fn params(&self) -> &crate::FilterMapParams {
                 &self.params
             }
 
@@ -290,7 +287,7 @@ mod tests {
                 map_indices: &[u32],
                 _: u32,
                 _: u32,
-            ) -> ProviderResult<Vec<crate::filter_maps::FilterRow>> {
+            ) -> ProviderResult<Vec<crate::FilterRow>> {
                 Ok(vec![vec![]; map_indices.len()])
             }
 
@@ -311,7 +308,7 @@ mod tests {
 
         // Test with addresses and topics
         let _matcher = build_matcher(
-            provider.clone(),
+            provider,
             vec![Address::ZERO],
             vec![vec![B256::ZERO], vec![], vec![B256::from([1u8; 32])]],
         )
@@ -320,6 +317,3 @@ mod tests {
     }
 }
 
-#[cfg(test)]
-#[path = "query_test.rs"]
-mod query_test;

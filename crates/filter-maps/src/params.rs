@@ -1,5 +1,5 @@
-//! Row and column mapping algorithms for FilterMaps based on EIP-7745.
-//! see: https://eips.ethereum.org/EIPS/eip-7745
+//! Row and column mapping algorithms for `FilterMaps` based on EIP-7745.
+//! see: <https://eips.ethereum.org/EIPS/eip-7745>
 
 use alloy_primitives::B256;
 use fnv::FnvHasher;
@@ -7,7 +7,7 @@ use fnv::FnvHasher;
 use sha2::{Digest, Sha256};
 use std::hash::Hasher;
 
-use crate::filter_maps::{constants::EXPECTED_MATCHES, types::FilterError, FilterRow};
+use crate::{constants::EXPECTED_MATCHES, types::FilterError, FilterRow};
 
 /// A strictly monotonically increasing list of log value indices in the range of a
 /// filter map that are potential matches for certain filter criteria.
@@ -17,7 +17,7 @@ use crate::filter_maps::{constants::EXPECTED_MATCHES, types::FilterError, Filter
 /// potential matches in the given map's range then an empty slice should be used.
 type PotentialMatches = Vec<u64>;
 
-/// FilterMaps parameters based on EIP-7745
+/// `FilterMaps` parameters based on EIP-7745
 #[derive(Debug, Clone)]
 pub struct FilterMapParams {
     /// Log of map height (rows per map). Default: 16 (65,536 rows)
@@ -45,27 +45,27 @@ impl Default for FilterMapParams {
 
 impl FilterMapParams {
     /// Get the number of rows per map
-    pub fn map_height(&self) -> u32 {
+    pub const fn map_height(&self) -> u32 {
         1 << self.log_map_height
     }
 
     /// Get the number of columns per row
-    pub fn map_width(&self) -> u32 {
+    pub const fn map_width(&self) -> u32 {
         1 << self.log_map_width
     }
 
     /// Get the number of maps per epoch
-    pub fn maps_per_epoch(&self) -> u32 {
+    pub const fn maps_per_epoch(&self) -> u32 {
         1 << self.log_maps_per_epoch
     }
 
     /// Get the number of values per map
-    pub fn values_per_map(&self) -> u64 {
+    pub const fn values_per_map(&self) -> u64 {
         1 << self.log_values_per_map
     }
 
     /// Get the base row length
-    pub fn base_row_length(&self) -> u32 {
+    pub const fn base_row_length(&self) -> u32 {
         ((self.values_per_map() * self.base_row_length_ratio as u64) / self.map_height() as u64)
             as u32
     }
@@ -76,19 +76,21 @@ impl FilterMapParams {
     /// allowed at each layer.
     pub fn required_layers(&self) -> u32 {
         // Average row length is values_per_map / map_height
-        let avg_row_length = (self.values_per_map() as f64) / (self.map_height() as f64);
+        // Use integer arithmetic to avoid float comparisons
+        let values_per_map = self.values_per_map();
+        let map_height = self.map_height() as u64;
 
-        // Find the layer where max_row_length >= avg_row_length
+        // Find the layer where max_row_length * map_height >= values_per_map
         let mut layer = 0u32;
-        while (self.max_row_length(layer) as f64) < avg_row_length {
+        while (self.max_row_length(layer) as u64) * map_height < values_per_map {
             layer += 1;
-            if layer >= crate::filter_maps::constants::MAX_LAYERS {
+            if layer >= crate::constants::MAX_LAYERS {
                 break;
             }
         }
 
         // Add one more layer for safety
-        (layer + 1).min(crate::filter_maps::constants::MAX_LAYERS)
+        (layer + 1).min(crate::constants::MAX_LAYERS)
     }
 
     /// Calculate the row index in which the given log value should be marked
@@ -107,7 +109,7 @@ impl FilterMapParams {
         let mut index_bytes = [0u8; 8];
         index_bytes[0..4].copy_from_slice(&masked_index.to_le_bytes());
         index_bytes[4..8].copy_from_slice(&layer_index.to_le_bytes());
-        hasher.update(&index_bytes);
+        hasher.update(index_bytes);
 
         let hash = hasher.finalize();
 
@@ -118,7 +120,7 @@ impl FilterMapParams {
 
     /// Returns the column index where the given log value at the given
     /// position should be marked.
-    pub fn column_index(&self, lv_index: u64, log_value: &B256) -> u32 {
+    pub fn column_index(&self, lv_index: u64, log_value: &B256) -> u64 {
         let mut hasher = FnvHasher::default();
         hasher.write(&lv_index.to_le_bytes());
         hasher.write(log_value.as_slice());
@@ -132,7 +134,7 @@ impl FilterMapParams {
 
         let hash_component = (hash >> (64 - hash_bits)) as u32 ^ (hash as u32) >> (32 - hash_bits);
 
-        (position_bits << hash_bits) + hash_component
+        ((position_bits << hash_bits) + hash_component) as u64
     }
 
     /// Returns the index used for row mapping calculation on the given layer.
@@ -189,8 +191,8 @@ impl FilterMapParams {
 
             // Check each column in the row up to the effective length
             for &column_value in &row[..row_len] {
-                let potential_match = map_first +
-                    (column_value >> (self.log_map_width - self.log_values_per_map)) as u64;
+                let potential_match =
+                    map_first + (column_value >> (self.log_map_width - self.log_values_per_map));
 
                 if column_value == self.column_index(potential_match, log_value) {
                     results.push(potential_match);
@@ -218,12 +220,14 @@ impl FilterMapParams {
 /// Calculate the global row index for database storage.
 ///
 /// This ensures rows from the same map are stored together.
-pub fn map_row_index(map_index: u32, row_index: u32, params: &FilterMapParams) -> u64 {
+#[allow(dead_code)]
+pub(crate) const fn map_row_index(map_index: u32, row_index: u32, params: &FilterMapParams) -> u64 {
     ((map_index as u64) * (params.map_height() as u64)) + (row_index as u64)
 }
 
 /// Get the map index from a log value index.
-pub fn map_index_from_lv_index(lv_index: u64, params: &FilterMapParams) -> u32 {
+#[allow(dead_code)]
+pub(crate) const fn map_index_from_lv_index(lv_index: u64, params: &FilterMapParams) -> u32 {
     (lv_index >> params.log_values_per_map) as u32
 }
 
@@ -427,7 +431,7 @@ mod tests {
                     );
 
                     // Since results are ordered, first TEST_PM_LEN entries should match exactly
-                    for j in 0..TEST_PM_LEN {
+                    for (j, _) in matches.iter().enumerate().take(TEST_PM_LEN) {
                         assert_eq!(
                             matches[j],
                             lv_start + j as u64,
@@ -443,9 +447,7 @@ mod tests {
                 }
             }
         }
-
-        // The test doesn't fail on false positives, just counts them
-        println!("Total false positives: {}", false_positives);
+        println!("Total false positives: {false_positives}");
     }
 
     #[test]
@@ -457,7 +459,7 @@ mod tests {
         let mut rows = Vec::new();
         for layer in 0..3 {
             let max_len = params.max_row_length(layer) as usize;
-            rows.push(vec![0u32; max_len]); // Full row
+            rows.push(vec![0u64; max_len]); // Full row
         }
 
         // This should return an error because all rows are full
@@ -472,7 +474,7 @@ mod tests {
 
         // Should have reasonable number of layers
         assert!(layers > 0);
-        assert!(layers <= crate::filter_maps::constants::MAX_LAYERS);
+        assert!(layers <= crate::constants::MAX_LAYERS);
 
         // The max row length at the last layer should be >= average row length
         let avg_row_length = (params.values_per_map() as f64) / (params.map_height() as f64);

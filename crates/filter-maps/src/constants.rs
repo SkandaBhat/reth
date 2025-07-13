@@ -1,4 +1,4 @@
-//! Constants for FilterMaps parameters
+//! Constants for `FilterMaps` parameters
 
 use super::params::FilterMapParams;
 

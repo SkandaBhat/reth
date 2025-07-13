@@ -1,21 +1,21 @@
 //! Matcher hierarchy for efficient log filtering.
 //!
 //! This module implements a hierarchical matcher system that can efficiently
-//! search through FilterMaps to find logs matching given criteria.
+//! search through `FilterMaps` to find logs matching given criteria.
 
-use crate::filter_maps::{
+use crate::{
     params::FilterMapParams,
     types::{FilterResult, MatchOrderStats, MatcherResult, PotentialMatches, RuntimeStats},
     FilterRow,
 };
 use alloy_primitives::B256;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{atomic::Ordering, Arc},
     time::Instant,
 };
 
-pub mod provider;
+pub(crate) mod provider;
 
 pub use provider::FilterMapProvider;
 
@@ -51,8 +51,29 @@ pub enum Matcher {
         offset: u64,
         /// Statistics for optimizing evaluation order.
         base_stats: Arc<MatchOrderStats>,
+        /// Statistics for optimizing evaluation order for the next matcher.
         next_stats: Arc<MatchOrderStats>,
     },
+}
+
+impl std::fmt::Debug for Matcher {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Single { value, stats, .. } => {
+                f.debug_struct("Single").field("value", value).field("stats", stats).finish()
+            }
+            Self::Any { matchers } => f.debug_struct("Any").field("matchers", matchers).finish(),
+            Self::Sequence { params, base, next, offset, base_stats, next_stats } => f
+                .debug_struct("Sequence")
+                .field("params", params)
+                .field("base", base)
+                .field("next", next)
+                .field("offset", offset)
+                .field("base_stats", base_stats)
+                .field("next_stats", next_stats)
+                .finish(),
+        }
+    }
 }
 
 impl Matcher {
@@ -62,15 +83,15 @@ impl Matcher {
     }
 
     /// Creates a new ANY matcher that matches if any child matches.
-    pub fn any(matchers: Vec<Matcher>) -> Self {
+    pub const fn any(matchers: Vec<Self>) -> Self {
         Self::Any { matchers }
     }
 
     /// Creates a new sequence matcher.
     pub fn sequence(
         params: Arc<FilterMapParams>,
-        base: Box<Matcher>,
-        next: Box<Matcher>,
+        base: Box<Self>,
+        next: Box<Self>,
         offset: u64,
     ) -> Self {
         Self::Sequence {
@@ -87,7 +108,7 @@ impl Matcher {
     ///
     /// The resulting matcher signals a match at log value index X when each
     /// underlying matcher matchers[i] returns a match at X+i.
-    pub fn sequence_from_slice(params: Arc<FilterMapParams>, mut matchers: Vec<Matcher>) -> Self {
+    pub fn sequence_from_slice(params: Arc<FilterMapParams>, mut matchers: Vec<Self>) -> Self {
         match matchers.len() {
             0 => panic!("Empty sequence matchers not allowed"),
             1 => matchers.into_iter().next().unwrap(),
@@ -113,9 +134,9 @@ impl Matcher {
         let mut layer = 0;
         while !state.is_complete() {
             // Check layer limit to prevent infinite loops
-            if layer >= crate::filter_maps::constants::MAX_LAYERS {
-                return Err(crate::filter_maps::types::FilterError::MaxLayersExceeded(
-                    crate::filter_maps::constants::MAX_LAYERS,
+            if layer >= crate::constants::MAX_LAYERS {
+                return Err(crate::types::FilterError::MaxLayersExceeded(
+                    crate::constants::MAX_LAYERS,
                 ));
             }
 
@@ -159,11 +180,11 @@ enum MatcherVariantState {
         /// State for next matcher.
         next_state: Box<MatcherState>,
         /// Maps we still need results for.
-        need_matched: HashMap<u32, ()>,
+        need_matched: HashSet<u32>,
         /// Maps requested from base.
-        base_requested: HashMap<u32, ()>,
+        base_requested: HashSet<u32>,
         /// Maps requested from next.
-        next_requested: HashMap<u32, ()>,
+        next_requested: HashSet<u32>,
         /// Results from base matcher.
         base_results: HashMap<u32, PotentialMatches>,
         /// Results from next matcher.
@@ -194,8 +215,7 @@ impl MatcherState {
                 MatcherVariantState::Single { active_indices: map_indices.to_vec(), filter_rows }
             }
             Matcher::Any { matchers } => {
-                let child_states =
-                    matchers.iter().map(|m| MatcherState::new(m, map_indices)).collect();
+                let child_states = matchers.iter().map(|m| Self::new(m, map_indices)).collect();
 
                 let mut child_results = HashMap::with_capacity(map_indices.len());
                 for &idx in map_indices {
@@ -212,17 +232,17 @@ impl MatcherState {
                 MatcherVariantState::Any { child_states, child_results }
             }
             Matcher::Sequence { base, next, .. } => {
-                let base_state = Box::new(MatcherState::new(base, map_indices));
-                let next_state = Box::new(MatcherState::new(next, map_indices));
+                let base_state = Box::new(Self::new(base, map_indices));
+                let next_state = Box::new(Self::new(next, map_indices));
 
-                let mut need_matched = HashMap::with_capacity(map_indices.len());
-                let mut base_requested = HashMap::with_capacity(map_indices.len());
-                let mut next_requested = HashMap::with_capacity(map_indices.len());
+                let mut need_matched = HashSet::with_capacity(map_indices.len());
+                let mut base_requested = HashSet::with_capacity(map_indices.len());
+                let mut next_requested = HashSet::with_capacity(map_indices.len());
 
                 for &idx in map_indices {
-                    need_matched.insert(idx, ());
-                    base_requested.insert(idx, ());
-                    next_requested.insert(idx, ());
+                    need_matched.insert(idx);
+                    base_requested.insert(idx);
+                    next_requested.insert(idx);
                 }
 
                 MatcherVariantState::Sequence {
@@ -396,7 +416,7 @@ impl MatcherState {
     /// Process layer for ANY matcher.
     fn process_any_layer_static(
         layer: u32,
-        child_states: &mut Vec<MatcherState>,
+        child_states: &mut [Self],
         child_results: &mut HashMap<u32, MatchAnyResults>,
     ) -> FilterResult<Vec<MatcherResult>> {
         let mut merged_results = Vec::new();
@@ -449,11 +469,11 @@ impl MatcherState {
         base_stats: &Arc<MatchOrderStats>,
         next_stats: &Arc<MatchOrderStats>,
         layer: u32,
-        base_state: &mut MatcherState,
-        next_state: &mut MatcherState,
-        need_matched: &mut HashMap<u32, ()>,
-        base_requested: &mut HashMap<u32, ()>,
-        next_requested: &mut HashMap<u32, ()>,
+        base_state: &mut Self,
+        next_state: &mut Self,
+        need_matched: &mut HashSet<u32>,
+        base_requested: &mut HashSet<u32>,
+        next_requested: &mut HashSet<u32>,
         base_results: &mut HashMap<u32, PotentialMatches>,
         next_results: &mut HashMap<u32, PotentialMatches>,
     ) -> FilterResult<Vec<MatcherResult>> {
@@ -498,11 +518,9 @@ impl MatcherState {
         // Collect completed results
         let mut matched_results = Vec::new();
         let completed_indices: Vec<_> = need_matched
-            .keys()
-            .filter(|&&idx| {
-                !base_requested.contains_key(&idx) && !next_requested.contains_key(&idx)
-            })
-            .cloned()
+            .iter()
+            .filter(|&&idx| !base_requested.contains(&idx) && !next_requested.contains(&idx))
+            .copied()
             .collect();
 
         for map_index in completed_indices {
@@ -529,15 +547,15 @@ impl MatcherState {
     /// Evaluate base matcher and update results.
     fn eval_base_static(
         layer: u32,
-        base_state: &mut MatcherState,
+        base_state: &mut Self,
         base_results: &mut HashMap<u32, PotentialMatches>,
-        base_requested: &mut HashMap<u32, ()>,
+        base_requested: &mut HashSet<u32>,
         base_stats: &Arc<MatchOrderStats>,
     ) -> FilterResult<()> {
         let results = base_state.process_layer(layer)?;
 
         for result in results {
-            let is_empty = result.matches.as_ref().map_or(false, |m| m.is_empty());
+            let is_empty = result.matches.as_ref().map(|m| m.is_empty()).unwrap_or(false);
             base_results.insert(result.map_index, result.matches);
             base_requested.remove(&result.map_index);
 
@@ -551,15 +569,15 @@ impl MatcherState {
     /// Evaluate next matcher and update results.
     fn eval_next_static(
         layer: u32,
-        next_state: &mut MatcherState,
+        next_state: &mut Self,
         next_results: &mut HashMap<u32, PotentialMatches>,
-        next_requested: &mut HashMap<u32, ()>,
+        next_requested: &mut HashSet<u32>,
         next_stats: &Arc<MatchOrderStats>,
     ) -> FilterResult<()> {
         let results = next_state.process_layer(layer)?;
 
         for result in results {
-            let is_empty = result.matches.as_ref().map_or(false, |m| m.is_empty());
+            let is_empty = result.matches.as_ref().map(|m| m.is_empty()).unwrap_or(false);
             next_results.insert(result.map_index, result.matches);
             next_requested.remove(&result.map_index);
 
@@ -573,17 +591,17 @@ impl MatcherState {
     /// Drop indices from next matcher if base results allow it.
     fn drop_next_if_needed_static(
         base_results: &HashMap<u32, PotentialMatches>,
-        need_matched: &HashMap<u32, ()>,
-        next_requested: &mut HashMap<u32, ()>,
-        next_state: &mut MatcherState,
+        need_matched: &HashSet<u32>,
+        next_requested: &mut HashSet<u32>,
+        next_state: &mut Self,
     ) {
         let mut drop_indices = Vec::new();
 
-        for (&map_index, _) in next_requested.iter() {
+        for &map_index in next_requested.iter() {
             if let Some(base) = base_results.get(&map_index) {
                 // Can drop if base is empty and we need a match
-                if need_matched.contains_key(&map_index) &&
-                    base.as_ref().map_or(false, |m| m.is_empty())
+                if need_matched.contains(&map_index) &&
+                    base.as_ref().map(|m| m.is_empty()).unwrap_or(false)
                 {
                     drop_indices.push(map_index);
                 }
@@ -602,17 +620,17 @@ impl MatcherState {
     /// Drop indices from base matcher if next results allow it.
     fn drop_base_if_needed_static(
         next_results: &HashMap<u32, PotentialMatches>,
-        need_matched: &HashMap<u32, ()>,
-        base_requested: &mut HashMap<u32, ()>,
-        base_state: &mut MatcherState,
+        need_matched: &HashSet<u32>,
+        base_requested: &mut HashSet<u32>,
+        base_state: &mut Self,
     ) {
         let mut drop_indices = Vec::new();
 
-        for (&map_index, _) in base_requested.iter() {
+        for &map_index in base_requested.iter() {
             if let Some(next) = next_results.get(&map_index) {
                 // Can drop if next is empty and we need a match
-                if need_matched.contains_key(&map_index) &&
-                    next.as_ref().map_or(false, |m| m.is_empty())
+                if need_matched.contains(&map_index) &&
+                    next.as_ref().map(|m| m.is_empty()).unwrap_or(false)
                 {
                     drop_indices.push(map_index);
                 }
@@ -661,7 +679,7 @@ impl MatcherState {
 /// For ANY matcher: Returns the union of all matches, sorted and deduplicated.
 /// Returns None if any input is None (wildcard).
 /// Returns empty vec only if all inputs are empty or there are no inputs.
-pub fn merge_potential_matches(results: &[PotentialMatches]) -> PotentialMatches {
+pub(crate) fn merge_potential_matches(results: &[PotentialMatches]) -> PotentialMatches {
     if results.is_empty() {
         return Some(vec![]);
     }
@@ -715,7 +733,7 @@ pub fn merge_potential_matches(results: &[PotentialMatches]) -> PotentialMatches
 /// Helper function to intersect two lists of potential matches for sequence matching.
 ///
 /// Used when matching sequences where base matches at X and next matches at X+offset.
-pub fn intersect_with_offset(
+pub(crate) fn intersect_with_offset(
     base: &PotentialMatches,
     next: &PotentialMatches,
     offset: u64,
@@ -727,10 +745,9 @@ pub fn intersect_with_offset(
         (None, Some(next_matches)) => {
             // Base is wildcard, filter next matches
             let min = (u64::from(map_index) << values_per_map) + offset;
-            let filtered: Vec<_> = next_matches
-                .iter()
-                .filter_map(|&v| if v >= min { Some(v - offset) } else { None })
-                .collect();
+            #[allow(clippy::filter_map_bool_then)]
+            let filtered: Vec<_> =
+                next_matches.iter().filter_map(|&v| (v >= min).then(|| v - offset)).collect();
             Some(filtered)
         }
         (Some(base_matches), None) => {
@@ -782,8 +799,8 @@ fn should_eval_base_first(
     let next_non_empty = next_stats.non_empty_count.load(Ordering::Relaxed) as f64;
 
     // Evaluate base first if it's expected to be cheaper overall
-    base_total_cost * next_total_count + base_non_empty * next_total_cost <
-        base_total_cost * next_non_empty + next_total_cost * base_total_count
+    base_total_cost.mul_add(next_total_count, base_non_empty * next_total_cost) <
+        base_total_cost.mul_add(next_non_empty, next_total_cost * base_total_count)
 }
 
 /// Updates match order statistics after evaluating a matcher.
@@ -802,7 +819,7 @@ mod tests {
 
     #[test]
     fn test_max_layers_limit() {
-        use crate::filter_maps::{FilterMapParams, FilterRow};
+        use crate::{FilterMapParams, FilterRow};
         use alloy_primitives::{b256, BlockNumber};
         use alloy_rpc_types_eth::Log;
         use reth_errors::ProviderResult;
@@ -829,7 +846,7 @@ mod tests {
             ) -> ProviderResult<Vec<FilterRow>> {
                 // Always return rows that are exactly at max length
                 let max_len = self.params.max_row_length(layer) as usize;
-                let row = vec![0u32; max_len];
+                let row = vec![0u64; max_len];
                 Ok(vec![row; map_indices.len()])
             }
 
@@ -838,18 +855,14 @@ mod tests {
             }
         }
 
-        let provider =
-            Arc::new(AlwaysFullProvider { params: crate::filter_maps::constants::DEFAULT_PARAMS });
+        let provider = Arc::new(AlwaysFullProvider { params: crate::constants::DEFAULT_PARAMS });
 
         let value = b256!("0000000000000000000000000000000000000000000000000000000000000001");
         let matcher = Matcher::single(provider, value);
 
         // This should hit the MAX_LAYERS limit and return an error
         let result = matcher.process(&[0]);
-        assert!(matches!(
-            result,
-            Err(crate::filter_maps::types::FilterError::MaxLayersExceeded(_))
-        ));
+        assert!(matches!(result, Err(crate::types::FilterError::MaxLayersExceeded(_))));
     }
 
     #[test]

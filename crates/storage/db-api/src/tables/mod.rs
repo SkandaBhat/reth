@@ -21,14 +21,15 @@ use crate::{
         accounts::BlockNumberAddress,
         blocks::{HeaderHash, StoredBlockOmmers},
         storage_sharded_key::StorageShardedKey,
-        AccountBeforeTx, ClientVersion, CompactU256, FilterMapLastBlock, FilterMapRow,
-        FilterMapsRange, IntegerList, ShardedKey, StoredBlockBodyIndices, StoredBlockWithdrawals,
+        AccountBeforeTx, ClientVersion, CompactU256, IntegerList, ShardedKey,
+        StoredBlockBodyIndices, StoredBlockWithdrawals,
     },
     table::{Decode, DupSort, Encode, Table, TableInfo},
 };
 use alloy_consensus::Header;
 use alloy_primitives::{Address, BlockHash, BlockNumber, TxHash, TxNumber, B256};
 use reth_ethereum_primitives::{Receipt, TransactionSigned};
+use reth_filter_maps::storage::{FilterMapLastBlock, FilterMapsRange, StoredFilterMapRow};
 use reth_primitives_traits::{Account, Bytecode, StorageEntry};
 use reth_prune_types::{PruneCheckpoint, PruneSegment};
 use reth_stages_types::StageCheckpoint;
@@ -528,7 +529,7 @@ tables! {
     /// The key is the map row index (see EIP-7745 for the indexing scheme).
     table FilterMapRows {
         type Key = u64;
-        type Value = FilterMapRow;
+        type Value = StoredFilterMapRow;
     }
 
     /// Stores block number to log value pointer mapping.

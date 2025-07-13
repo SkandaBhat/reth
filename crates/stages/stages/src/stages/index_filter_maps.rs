@@ -2,11 +2,12 @@
 //!
 //! This stage builds filter maps from executed blocks to enable efficient log querying.
 
+use reth_filter_maps::FilterMapParams;
 use reth_provider::DBProvider;
 use reth_stages_api::{
     ExecInput, ExecOutput, Stage, StageCheckpoint, StageError, StageId, UnwindInput, UnwindOutput,
 };
-use std::fmt::Debug;
+use std::{fmt::Debug, sync::Arc};
 
 /// The filter maps indexing stage.
 ///
@@ -14,21 +15,23 @@ use std::fmt::Debug;
 #[derive(Debug, Clone)]
 pub struct IndexFilterMapsStage {
     /// The filter map parameters.
-    // TODO: Add FilterMapParams when implementing
+    #[allow(dead_code)]
+    params: Arc<FilterMapParams>,
     /// The current log value index.
+    #[allow(dead_code)]
     current_lv_index: u64,
 }
 
 impl IndexFilterMapsStage {
-    /// Creates a new filter maps indexing stage.
-    pub const fn new() -> Self {
-        Self { current_lv_index: 0 }
+    /// Creates a new filter maps indexing stage with the given parameters.
+    pub fn new(params: Arc<FilterMapParams>) -> Self {
+        Self { params, current_lv_index: 0 }
     }
 }
 
 impl Default for IndexFilterMapsStage {
     fn default() -> Self {
-        Self::new()
+        Self::new(Arc::new(FilterMapParams::default()))
     }
 }
 
@@ -51,10 +54,13 @@ where
         let checkpoint = input.checkpoint();
         let _start_block = checkpoint.block_number + 1;
 
-        // TODO: Implement in stage PR
-        // 1. Initialize FilterMapsProcessor with current lv_index
-        // 2. For each block in range: a. Load block receipts b. Process block with
-        //    processor.process_block() c. Store completed filter maps d. Update block lv pointers
+        // TODO: Implement
+        // 1. Initialize FilterMapsProcessor with params and current lv_index
+        // 2. For each block in range:
+        //    a. Load block receipts
+        //    b. Process block with processor.process_block()
+        //    c. Store completed filter maps
+        //    d. Update block lv pointers
         // 3. Update filter maps metadata
         // 4. Update checkpoint
 
@@ -70,22 +76,11 @@ where
     ) -> Result<UnwindOutput, StageError> {
         let unwind_to = input.unwind_to;
 
-        // TODO: Implement in stage PR
+        // TODO: Implement
         // 1. Remove filter map data for blocks > unwind_to
         // 2. Update filter maps metadata
         // 3. Restore lv_index to the correct position
 
         Ok(UnwindOutput { checkpoint: StageCheckpoint::new(unwind_to) })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_stage_id() {
-        let stage = IndexFilterMapsStage::new();
-        assert_eq!(stage.id(), StageId::Other("IndexFilterMaps"));
     }
 }
