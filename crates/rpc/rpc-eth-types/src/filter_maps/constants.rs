@@ -7,7 +7,7 @@ use super::params::FilterMapParams;
 pub const EXPECTED_MATCHES: usize = 8;
 
 /// Maximum number of layers allowed in filter maps.
-/// This prevents infinite loops in case of corrupted data.
+/// This is a safety limit to prevent infinite loops in case of corrupted data.
 pub const MAX_LAYERS: u32 = 16;
 
 /// Default parameters used on mainnet
@@ -21,7 +21,8 @@ pub const DEFAULT_PARAMS: FilterMapParams = FilterMapParams {
     log_layer_diff: 4,
 };
 
-/// Test parameters that put one log value per epoch, ensuring block exact tail unindexing for testing
+/// Test parameters that put one log value per epoch, ensuring block exact tail unindexing for
+/// testing
 pub const RANGE_TEST_PARAMS: FilterMapParams = FilterMapParams {
     log_map_height: 4,
     log_map_width: 24,

@@ -22,10 +22,3 @@ pub use blocks::{StaticFileBlockWithdrawals, StoredBlockBodyIndices, StoredBlock
 /// Client Version
 pub mod client_version;
 pub use client_version::ClientVersion;
-
-/// Filter maps
-pub mod filter_map;
-pub use filter_map::{
-    CompressedFilterRow, FilterMapMetadata, LogValueRange, MapBoundary, LAYER_COMMON_RATIO,
-    MAPS_PER_EPOCH, MAP_HEIGHT, MAP_WIDTH, MAX_BASE_ROW_LENGTH, VALUES_PER_MAP,
-};

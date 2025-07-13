@@ -10,27 +10,27 @@ pub enum FilterError {
     /// Use legacy filtering for this case.
     #[error("filter matches all logs")]
     MatchAll,
-    
+
     /// Provider error occurred.
     #[error("provider error: {0}")]
     Provider(#[from] reth_errors::ProviderError),
-    
+
     /// Invalid block range specified.
     #[error("invalid block range: {0} > {1}")]
     InvalidRange(u64, u64),
-    
+
     /// Insufficient layers in filter map row alternatives.
     #[error("insufficient filter map layers for map {0}")]
     InsufficientLayers(u32),
-    
+
     /// Corrupted filter map data detected.
     #[error("corrupted filter map data: {0}")]
     CorruptedData(String),
-    
+
     /// Maximum layer limit exceeded.
     #[error("maximum layer limit ({0}) exceeded")]
     MaxLayersExceeded(u32),
-    
+
     /// Invalid filter map parameters.
     #[error("invalid filter map parameters: {0}")]
     InvalidParameters(String),
@@ -38,7 +38,6 @@ pub enum FilterError {
 
 /// Result type for FilterMaps operations.
 pub type FilterResult<T> = Result<T, FilterError>;
-
 
 /// A list of potential matching log value indices.
 ///
@@ -71,12 +70,12 @@ impl LogFilter {
     pub fn new(addresses: Vec<Address>, topics: Vec<Vec<B256>>) -> Self {
         Self { addresses, topics }
     }
-    
+
     /// Returns true if this filter matches all logs (no constraints).
     pub fn matches_all(&self) -> bool {
         self.addresses.is_empty() && self.topics.is_empty()
     }
-    
+
     /// Returns true if any position has at least one specific value to match.
     pub fn has_constraints(&self) -> bool {
         !self.addresses.is_empty() || self.topics.iter().any(|t| !t.is_empty())
@@ -98,7 +97,7 @@ impl MatchOrderStats {
     /// Updates statistics after an evaluation.
     pub fn add(&self, empty: bool, layer_index: u32) {
         use std::sync::atomic::Ordering::Relaxed;
-        
+
         // Track all evaluations for accurate statistics
         self.total_count.fetch_add(1, Relaxed);
         if !empty {
@@ -106,32 +105,32 @@ impl MatchOrderStats {
         }
         self.total_cost.fetch_add(u64::from(layer_index + 1), Relaxed);
     }
-    
+
     /// Merges another set of statistics into this one.
     pub fn merge(&self, other: &MatchOrderStats) {
         use std::sync::atomic::Ordering::Relaxed;
-        
+
         self.total_count.fetch_add(other.total_count.load(Relaxed), Relaxed);
         self.non_empty_count.fetch_add(other.non_empty_count.load(Relaxed), Relaxed);
         self.total_cost.fetch_add(other.total_cost.load(Relaxed), Relaxed);
     }
-    
+
     /// Calculates the evaluation score for comparison.
     /// Lower score means this matcher should be evaluated first.
     pub fn score(&self) -> f64 {
         use std::sync::atomic::Ordering::Relaxed;
-        
+
         let total_count = self.total_count.load(Relaxed);
         if total_count == 0 {
             return f64::MAX;
         }
-        
+
         let total_cost = self.total_cost.load(Relaxed);
         let non_empty_count = self.non_empty_count.load(Relaxed);
-        
+
         let avg_cost = total_cost as f64 / total_count as f64;
         let empty_rate = 1.0 - (non_empty_count as f64 / total_count as f64);
-        
+
         // Balance between cost and empty rate
         avg_cost * (1.0 + empty_rate)
     }
@@ -146,21 +145,21 @@ pub struct RuntimeStats {
     pub fetch_first_duration_ns: AtomicU64,
     /// Rows fetched from first layer
     pub fetch_first_rows: AtomicU64,
-    
+
     /// Number of additional layer fetches
     pub fetch_more_count: AtomicU64,
     /// Time spent fetching additional layers (nanoseconds)
     pub fetch_more_duration_ns: AtomicU64,
     /// Rows fetched from additional layers
     pub fetch_more_rows: AtomicU64,
-    
+
     /// Number of process operations
     pub process_count: AtomicU64,
     /// Time spent processing matches (nanoseconds)
     pub process_duration_ns: AtomicU64,
     /// Matches found
     pub process_matches: AtomicU64,
-    
+
     /// Number of logs fetched
     pub get_log_count: AtomicU64,
     /// Time spent fetching logs (nanoseconds)
@@ -171,7 +170,7 @@ impl RuntimeStats {
     /// Creates a summary of the statistics (non-atomic snapshot).
     pub fn summary(&self) -> RuntimeStatsSummary {
         use std::sync::atomic::Ordering::Relaxed;
-        
+
         RuntimeStatsSummary {
             fetch_first_count: self.fetch_first_count.load(Relaxed),
             fetch_first_duration_ns: self.fetch_first_duration_ns.load(Relaxed),
@@ -207,45 +206,45 @@ pub struct RuntimeStatsSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_log_filter_constraints() {
         let filter = LogFilter::default();
         assert!(filter.matches_all());
         assert!(!filter.has_constraints());
-        
+
         let filter = LogFilter::new(vec![Address::ZERO], vec![]);
         assert!(!filter.matches_all());
         assert!(filter.has_constraints());
-        
+
         let filter = LogFilter::new(vec![], vec![vec![B256::ZERO]]);
         assert!(!filter.matches_all());
         assert!(filter.has_constraints());
     }
-    
+
     #[test]
     fn test_match_order_stats() {
         use std::sync::atomic::Ordering::Relaxed;
-        
+
         let stats = MatchOrderStats::default();
-        
+
         // Add some evaluations
         stats.add(false, 0); // Non-empty at layer 0 (cost=1)
-        stats.add(true, 0);  // Empty at layer 0 (cost=1)
+        stats.add(true, 0); // Empty at layer 0 (cost=1)
         stats.add(false, 1); // Non-empty at layer 1 (cost=2)
-        stats.add(true, 1);  // Empty at layer 1 (cost=2)
-        
+        stats.add(true, 1); // Empty at layer 1 (cost=2)
+
         assert_eq!(stats.total_count.load(Relaxed), 4);
         assert_eq!(stats.non_empty_count.load(Relaxed), 2);
         assert_eq!(stats.total_cost.load(Relaxed), 6); // 1 + 1 + 2 + 2
-        
+
         // Test merge
         let other = MatchOrderStats::default();
         other.total_count.store(2, Relaxed);
         other.non_empty_count.store(1, Relaxed);
         other.total_cost.store(3, Relaxed);
         stats.merge(&other);
-        
+
         assert_eq!(stats.total_count.load(Relaxed), 6);
         assert_eq!(stats.non_empty_count.load(Relaxed), 3);
         assert_eq!(stats.total_cost.load(Relaxed), 9); // 6 + 3

@@ -17,12 +17,12 @@ use reth_errors::ProviderResult;
 pub trait FilterMapProvider: Send + Sync {
     /// Returns the filter map parameters used by this provider.
     fn params(&self) -> &FilterMapParams;
-    
+
     /// Maps a block number to the log value index of its first log.
     ///
     /// Returns an error if the block is not indexed or doesn't exist.
     fn block_to_log_index(&self, block_number: BlockNumber) -> ProviderResult<u64>;
-    
+
     /// Retrieves filter map rows for the given map indices and row index.
     ///
     /// # Arguments
@@ -37,7 +37,7 @@ pub trait FilterMapProvider: Send + Sync {
         row_index: u32,
         layer: u32,
     ) -> ProviderResult<Vec<FilterRow>>;
-    
+
     /// Retrieves a log by its log value index.
     ///
     /// Returns None if the log at the given index doesn't exist or has been pruned.

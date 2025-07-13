@@ -160,7 +160,7 @@ pub fn verify_log_matches_filter(log: &Log, addresses: &[Address], topics: &[Vec
     if !addresses.is_empty() && !addresses.contains(&log.address()) {
         return false;
     }
-    
+
     // Check topics match
     let log_topics = log.topics();
     for (i, topic_options) in topics.iter().enumerate() {
@@ -168,7 +168,7 @@ pub fn verify_log_matches_filter(log: &Log, addresses: &[Address], topics: &[Vec
             // Empty means any topic at this position is ok
             continue;
         }
-        
+
         // Check if log has a topic at this position
         if let Some(log_topic) = log_topics.get(i) {
             if !topic_options.contains(log_topic) {
@@ -179,7 +179,7 @@ pub fn verify_log_matches_filter(log: &Log, addresses: &[Address], topics: &[Vec
             return false;
         }
     }
-    
+
     true
 }
 
@@ -194,7 +194,7 @@ mod tests {
         // Should be SHA256 hash of the address
         let expected = crate::filter_maps::utils::address_value(&addr);
         assert_eq!(value, expected);
-        
+
         // Should be deterministic
         let value2 = address_to_log_value(addr);
         assert_eq!(value, value2);
@@ -207,22 +207,22 @@ mod tests {
         // Should be SHA256 hash of the topic
         let expected = crate::filter_maps::utils::topic_value(&topic);
         assert_eq!(value, expected);
-        
+
         // Should be deterministic
         let value2 = topic_to_log_value(topic);
         assert_eq!(value, value2);
     }
-    
+
     #[test]
     fn test_verify_log_matches_filter() {
         use alloy_primitives::{address, b256, Bytes, Log as PrimLog};
-        
+
         let addr1 = address!("1111111111111111111111111111111111111111");
         let addr2 = address!("2222222222222222222222222222222222222222");
         let topic1 = b256!("0000000000000000000000000000000000000000000000000000000000000001");
         let topic2 = b256!("0000000000000000000000000000000000000000000000000000000000000002");
         let topic3 = b256!("0000000000000000000000000000000000000000000000000000000000000003");
-        
+
         // Create a log with address and 2 topics
         let inner_log = PrimLog::new(addr1, vec![topic1, topic2], Bytes::default()).unwrap();
         let log = Log {
@@ -235,77 +235,87 @@ mod tests {
             log_index: None,
             removed: false,
         };
-        
+
         // Test exact match
         assert!(verify_log_matches_filter(&log, &[addr1], &[vec![topic1], vec![topic2]]));
-        
+
         // Test address mismatch
         assert!(!verify_log_matches_filter(&log, &[addr2], &[vec![topic1], vec![topic2]]));
-        
+
         // Test topic mismatch
         assert!(!verify_log_matches_filter(&log, &[addr1], &[vec![topic3], vec![topic2]]));
-        
+
         // Test empty address filter (matches any)
         assert!(verify_log_matches_filter(&log, &[], &[vec![topic1], vec![topic2]]));
-        
+
         // Test empty topic filter at position (matches any)
         assert!(verify_log_matches_filter(&log, &[addr1], &[vec![], vec![topic2]]));
-        
+
         // Test multiple address options
         assert!(verify_log_matches_filter(&log, &[addr2, addr1], &[vec![topic1], vec![topic2]]));
-        
+
         // Test multiple topic options
         assert!(verify_log_matches_filter(&log, &[addr1], &[vec![topic3, topic1], vec![topic2]]));
-        
+
         // Test filter requires more topics than log has
-        assert!(!verify_log_matches_filter(&log, &[addr1], &[vec![topic1], vec![topic2], vec![topic3]]));
+        assert!(!verify_log_matches_filter(
+            &log,
+            &[addr1],
+            &[vec![topic1], vec![topic2], vec![topic3]]
+        ));
     }
-    
+
     #[test]
     fn test_build_matcher_edge_cases() {
         use crate::filter_maps::{constants::DEFAULT_PARAMS, matcher::FilterMapProvider};
         use alloy_primitives::BlockNumber;
         use alloy_rpc_types_eth::Log;
         use reth_errors::ProviderResult;
-        
+
         struct MockProvider {
             params: crate::filter_maps::FilterMapParams,
         }
-        
+
         impl FilterMapProvider for MockProvider {
             fn params(&self) -> &crate::filter_maps::FilterMapParams {
                 &self.params
             }
-            
+
             fn block_to_log_index(&self, _: BlockNumber) -> ProviderResult<u64> {
                 Ok(0)
             }
-            
-            fn get_filter_rows(&self, map_indices: &[u32], _: u32, _: u32) -> ProviderResult<Vec<crate::filter_maps::FilterRow>> {
+
+            fn get_filter_rows(
+                &self,
+                map_indices: &[u32],
+                _: u32,
+                _: u32,
+            ) -> ProviderResult<Vec<crate::filter_maps::FilterRow>> {
                 Ok(vec![vec![]; map_indices.len()])
             }
-            
+
             fn get_log(&self, _: u64) -> ProviderResult<Option<Log>> {
                 Ok(None)
             }
         }
-        
+
         let provider = Arc::new(MockProvider { params: DEFAULT_PARAMS });
-        
+
         // Test empty filter (should match all)
         let _matcher = build_matcher(provider.clone(), vec![], vec![]).unwrap();
         // The sequence matcher should have one ANY matcher for addresses
-        
+
         // Test with only addresses
         let _matcher = build_matcher(provider.clone(), vec![Address::ZERO], vec![]).unwrap();
         // Should create matcher for address only
-        
+
         // Test with addresses and topics
         let _matcher = build_matcher(
             provider.clone(),
             vec![Address::ZERO],
             vec![vec![B256::ZERO], vec![], vec![B256::from([1u8; 32])]],
-        ).unwrap();
+        )
+        .unwrap();
         // Should create sequence of 4 matchers (1 address + 3 topics)
     }
 }

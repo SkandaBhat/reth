@@ -21,7 +21,6 @@ pub enum StageId {
     TransactionLookup,
     IndexStorageHistory,
     IndexAccountHistory,
-    IndexLogs,
     Prune,
     Finish,
     /// Other custom stage with a provided string identifier.
@@ -30,7 +29,7 @@ pub enum StageId {
 
 impl StageId {
     /// All supported Stages
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 15] = [
         Self::Era,
         Self::Headers,
         Self::Bodies,
@@ -44,7 +43,6 @@ impl StageId {
         Self::TransactionLookup,
         Self::IndexStorageHistory,
         Self::IndexAccountHistory,
-        Self::IndexLogs,
         Self::Prune,
         Self::Finish,
     ];
@@ -80,7 +78,6 @@ impl StageId {
             Self::TransactionLookup => "TransactionLookup",
             Self::IndexAccountHistory => "IndexAccountHistory",
             Self::IndexStorageHistory => "IndexStorageHistory",
-            Self::IndexLogs => "IndexLogs",
             Self::Prune => "Prune",
             Self::Finish => "Finish",
             Self::Other(s) => s,
@@ -127,7 +124,6 @@ mod tests {
         assert_eq!(StageId::IndexAccountHistory.to_string(), "IndexAccountHistory");
         assert_eq!(StageId::IndexStorageHistory.to_string(), "IndexStorageHistory");
         assert_eq!(StageId::TransactionLookup.to_string(), "TransactionLookup");
-        assert_eq!(StageId::IndexLogs.to_string(), "IndexLogs");
         assert_eq!(StageId::Finish.to_string(), "Finish");
 
         assert_eq!(StageId::Other("Foo").to_string(), "Foo");

@@ -69,7 +69,7 @@ impl FilterMapParams {
         ((self.values_per_map() * self.base_row_length_ratio as u64) / self.map_height() as u64)
             as u32
     }
-    
+
     /// Calculate the minimum number of layers required to store all values.
     ///
     /// This is based on the average row length and the maximum row length
@@ -77,7 +77,7 @@ impl FilterMapParams {
     pub fn required_layers(&self) -> u32 {
         // Average row length is values_per_map / map_height
         let avg_row_length = (self.values_per_map() as f64) / (self.map_height() as f64);
-        
+
         // Find the layer where max_row_length >= avg_row_length
         let mut layer = 0u32;
         while (self.max_row_length(layer) as f64) < avg_row_length {
@@ -86,7 +86,7 @@ impl FilterMapParams {
                 break;
             }
         }
-        
+
         // Add one more layer for safety
         (layer + 1).min(crate::filter_maps::constants::MAX_LAYERS)
     }
@@ -189,8 +189,8 @@ impl FilterMapParams {
 
             // Check each column in the row up to the effective length
             for &column_value in &row[..row_len] {
-                let potential_match = map_first
-                    + (column_value >> (self.log_map_width - self.log_values_per_map)) as u64;
+                let potential_match = map_first +
+                    (column_value >> (self.log_map_width - self.log_values_per_map)) as u64;
 
                 if column_value == self.column_index(potential_match, log_value) {
                     results.push(potential_match);
@@ -295,8 +295,8 @@ mod tests {
             let mut rng = rng();
             let map_index = rng.random::<u32>();
 
-            let lv_index = ((map_index as u64) << params.log_values_per_map)
-                + rng.random_range(0..params.values_per_map());
+            let lv_index = ((map_index as u64) << params.log_values_per_map) +
+                rng.random_range(0..params.values_per_map());
 
             // Generate random hash
             let mut lv_hash_bytes = [0u8; 32];
@@ -350,7 +350,8 @@ mod tests {
                 row.push(params.column_index(lv_index, &lv_hash));
             }
 
-            // Add the same log value hash at the first TEST_PM_LEN log value indices of the map's range
+            // Add the same log value hash at the first TEST_PM_LEN log value indices of the map's
+            // range
             let mut common_hash_bytes = [0u8; 32];
             rng.fill(&mut common_hash_bytes);
             let common_hash = B256::from(common_hash_bytes);
@@ -446,33 +447,33 @@ mod tests {
         // The test doesn't fail on false positives, just counts them
         println!("Total false positives: {}", false_positives);
     }
-    
+
     #[test]
     fn test_insufficient_layers_error() {
         let params = FilterMapParams::default();
         let value = b256!("0000000000000000000000000000000000000000000000000000000000000001");
-        
+
         // Create rows where the last one is full
         let mut rows = Vec::new();
         for layer in 0..3 {
             let max_len = params.max_row_length(layer) as usize;
             rows.push(vec![0u32; max_len]); // Full row
         }
-        
+
         // This should return an error because all rows are full
         let result = params.potential_matches(&rows, 0, &value);
         assert!(matches!(result, Err(FilterError::InsufficientLayers(0))));
     }
-    
+
     #[test]
     fn test_required_layers() {
         let params = FilterMapParams::default();
         let layers = params.required_layers();
-        
+
         // Should have reasonable number of layers
         assert!(layers > 0);
         assert!(layers <= crate::filter_maps::constants::MAX_LAYERS);
-        
+
         // The max row length at the last layer should be >= average row length
         let avg_row_length = (params.values_per_map() as f64) / (params.map_height() as f64);
         let max_at_last_layer = params.max_row_length(layers - 1) as f64;
@@ -484,42 +485,42 @@ mod tests {
             avg_row_length
         );
     }
-    
+
     #[test]
     fn test_map_row_index() {
         let params = FilterMapParams::default();
-        
+
         // First row of first map
         assert_eq!(map_row_index(0, 0, &params), 0);
-        
+
         // Last row of first map
         let last_row = params.map_height() - 1;
         assert_eq!(map_row_index(0, last_row, &params), last_row as u64);
-        
+
         // First row of second map
         assert_eq!(map_row_index(1, 0, &params), params.map_height() as u64);
-        
+
         // Random row in random map
         let map_idx = 42u32;
         let row_idx = 1337u32;
         let expected = (map_idx as u64) * (params.map_height() as u64) + (row_idx as u64);
         assert_eq!(map_row_index(map_idx, row_idx, &params), expected);
     }
-    
+
     #[test]
     fn test_map_index_from_lv_index() {
         let params = FilterMapParams::default();
-        
+
         // First log value should be in map 0
         assert_eq!(map_index_from_lv_index(0, &params), 0);
-        
+
         // Last log value of first map should still be in map 0
         let last_lv_first_map = params.values_per_map() - 1;
         assert_eq!(map_index_from_lv_index(last_lv_first_map, &params), 0);
-        
+
         // First log value of second map should be in map 1
         assert_eq!(map_index_from_lv_index(params.values_per_map(), &params), 1);
-        
+
         // Random log value
         let lv_index = 123456789u64;
         let expected_map = (lv_index >> params.log_values_per_map) as u32;

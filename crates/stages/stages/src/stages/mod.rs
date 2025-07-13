@@ -14,8 +14,6 @@ mod headers;
 mod index_account_history;
 /// Index history of storage changes
 mod index_storage_history;
-/// Index logs stage for efficient log querying (EIP-7745)
-mod index_logs;
 /// Stage for computing state root.
 mod merkle;
 mod prune;
@@ -34,7 +32,6 @@ pub use hashing_account::*;
 pub use hashing_storage::*;
 pub use headers::*;
 pub use index_account_history::*;
-pub use index_logs::*;
 pub use index_storage_history::*;
 pub use merkle::*;
 pub use prune::*;
