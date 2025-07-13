@@ -12,6 +12,8 @@ mod hashing_storage;
 mod headers;
 /// Index history of account changes
 mod index_account_history;
+/// Index filter maps
+mod index_filter_maps;
 /// Index history of storage changes
 mod index_storage_history;
 /// Stage for computing state root.
@@ -32,6 +34,7 @@ pub use hashing_account::*;
 pub use hashing_storage::*;
 pub use headers::*;
 pub use index_account_history::*;
+pub use index_filter_maps::*;
 pub use index_storage_history::*;
 pub use merkle::*;
 pub use prune::*;

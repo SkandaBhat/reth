@@ -21,8 +21,8 @@ use crate::{
         accounts::BlockNumberAddress,
         blocks::{HeaderHash, StoredBlockOmmers},
         storage_sharded_key::StorageShardedKey,
-        AccountBeforeTx, ClientVersion, CompactU256, IntegerList, ShardedKey,
-        StoredBlockBodyIndices, StoredBlockWithdrawals,
+        AccountBeforeTx, ClientVersion, CompactU256, FilterMapLastBlock, FilterMapRow,
+        FilterMapsRange, IntegerList, ShardedKey, StoredBlockBodyIndices, StoredBlockWithdrawals,
     },
     table::{Decode, DupSort, Encode, Table, TableInfo},
 };
@@ -522,6 +522,34 @@ tables! {
     table ChainState {
         type Key = ChainStateKey;
         type Value = BlockNumber;
+    }
+
+    /// Stores filter map rows for EIP-7745 log indexing.
+    /// The key is the map row index (see EIP-7745 for the indexing scheme).
+    table FilterMapRows {
+        type Key = u64;
+        type Value = FilterMapRow;
+    }
+
+    /// Stores block number to log value pointer mapping.
+    /// This allows finding where a block's logs start in the global sequence.
+    table BlockLvPointers {
+        type Key = BlockNumber;
+        type Value = u64;
+    }
+
+    /// Stores the last block information for each filter map.
+    /// Key is the map index, value contains block info.
+    table FilterMapLastBlocks {
+        type Key = u32;
+        type Value = FilterMapLastBlock;
+    }
+
+    /// Stores the overall filter maps range metadata.
+    /// Single entry table using u8 key with value 0.
+    table FilterMapsRangeTable {
+        type Key = u8;
+        type Value = FilterMapsRange;
     }
 }
 

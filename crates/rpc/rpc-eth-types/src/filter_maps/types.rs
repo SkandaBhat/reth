@@ -34,6 +34,10 @@ pub enum FilterError {
     /// Invalid filter map parameters.
     #[error("invalid filter map parameters: {0}")]
     InvalidParameters(String),
+
+    /// Invalid block sequence.
+    #[error("invalid block sequence: expected {expected}, got {actual}")]
+    InvalidBlockSequence { expected: u64, actual: u64 },
 }
 
 /// Result type for FilterMaps operations.

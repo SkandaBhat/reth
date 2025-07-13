@@ -1,8 +1,10 @@
 //! FilterMaps query engine for efficient log retrieval.
 
+mod builder;
 mod constants;
 mod matcher;
 mod params;
+mod processor;
 mod query;
 mod types;
 // mod renderer;
@@ -11,9 +13,11 @@ mod utils;
 #[cfg(test)]
 mod any_test;
 
+pub use builder::{FilterMapBuilder, LogValueIterator, RenderedMap};
 pub use constants::{DEFAULT_PARAMS, EXPECTED_MATCHES, RANGE_TEST_PARAMS};
 pub use matcher::{FilterMapProvider, Matcher};
 pub use params::FilterMapParams;
+pub use processor::FilterMapsProcessor;
 pub use query::{query_logs, verify_log_matches_filter};
 pub use types::{
     FilterError, FilterResult, LogFilter, MatchOrderStats, MatcherResult, PotentialMatches,
