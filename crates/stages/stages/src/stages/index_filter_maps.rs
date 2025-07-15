@@ -56,11 +56,8 @@ where
 
         // TODO: Implement
         // 1. Initialize FilterMapsProcessor with params and current lv_index
-        // 2. For each block in range:
-        //    a. Load block receipts
-        //    b. Process block with processor.process_block()
-        //    c. Store completed filter maps
-        //    d. Update block lv pointers
+        // 2. For each block in range: a. Load block receipts b. Process block with
+        //    processor.process_block() c. Store completed filter maps d. Update block lv pointers
         // 3. Update filter maps metadata
         // 4. Update checkpoint
 

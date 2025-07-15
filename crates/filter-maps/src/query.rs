@@ -3,7 +3,8 @@
 //! This module provides the high-level API for querying logs using `FilterMaps`.
 
 use crate::{
-    matcher::{FilterMapProvider, Matcher},
+    matcher::Matcher,
+    provider::FilterMapProvider,
     types::{FilterError, FilterResult},
 };
 use alloy_primitives::{Address, BlockNumber, B256};
@@ -264,7 +265,7 @@ mod tests {
 
     #[test]
     fn test_build_matcher_edge_cases() {
-        use crate::{constants::DEFAULT_PARAMS, matcher::FilterMapProvider};
+        use crate::{constants::DEFAULT_PARAMS, FilterMapProvider};
         use alloy_primitives::BlockNumber;
         use alloy_rpc_types_eth::Log;
         use reth_errors::ProviderResult;
@@ -316,4 +317,3 @@ mod tests {
         // Should create sequence of 4 matchers (1 address + 3 topics)
     }
 }
-

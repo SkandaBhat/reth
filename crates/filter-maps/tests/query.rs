@@ -1,10 +1,15 @@
 //! Query tests for filter maps
 
+#![cfg(feature = "test-utils")]
+
 use alloy_primitives::{address, bytes, LogData, B256};
 use alloy_rpc_types_eth::Log;
-use reth_filter_maps::{address_value, query_logs, topic_value, test_utils::MockFilterMapProvider, FilterError};
+use reth_filter_maps::{
+    address_value, query_logs, test_utils::MockFilterMapProvider, topic_value, FilterError,
+};
 use std::sync::Arc;
 
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_query_single_log() {
     let mut provider = MockFilterMapProvider::new();
@@ -258,10 +263,7 @@ fn test_block_range_filtering() {
 
     // Add logs in different blocks
     let log1 = Log {
-        inner: alloy_primitives::Log {
-            address,
-            data: LogData::new_unchecked(vec![], bytes!()),
-        },
+        inner: alloy_primitives::Log { address, data: LogData::new_unchecked(vec![], bytes!()) },
         block_hash: Some(B256::ZERO),
         block_number: Some(2),
         block_timestamp: None,
@@ -272,10 +274,7 @@ fn test_block_range_filtering() {
     };
 
     let log2 = Log {
-        inner: alloy_primitives::Log {
-            address,
-            data: LogData::new_unchecked(vec![], bytes!()),
-        },
+        inner: alloy_primitives::Log { address, data: LogData::new_unchecked(vec![], bytes!()) },
         block_hash: Some(B256::ZERO),
         block_number: Some(7),
         block_timestamp: None,

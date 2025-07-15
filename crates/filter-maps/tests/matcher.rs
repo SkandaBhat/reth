@@ -1,9 +1,14 @@
 //! Matcher tests for filter maps
 
+#![cfg(feature = "test-utils")]
+
 use alloy_primitives::{address, B256};
-use reth_filter_maps::{address_value, topic_value, test_utils::SimpleProvider, FilterMapProvider, Matcher};
+use reth_filter_maps::{
+    address_value, test_utils::SimpleProvider, topic_value, FilterMapProvider, Matcher,
+};
 use std::sync::Arc;
 
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_any_matcher_basic() {
     let mut provider = SimpleProvider::new();

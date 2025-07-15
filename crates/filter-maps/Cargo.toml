@@ -41,3 +41,6 @@ test-fuzz.workspace = true
 default = []
 reth-codecs = ["dep:reth-codecs", "dep:modular-bitfield"]
 test-utils = []
+
+[profile.test]
+features = ["test-utils"]

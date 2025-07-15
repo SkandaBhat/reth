@@ -2,10 +2,9 @@
 
 use crate::{
     constants::DEFAULT_PARAMS,
-    matcher::FilterMapProvider,
     params::FilterMapParams,
     utils::{address_value, topic_value},
-    FilterRow,
+    FilterMapProvider, FilterRow,
 };
 use alloy_primitives::{Address, BlockNumber, B256};
 use alloy_rpc_types_eth::Log;
@@ -66,7 +65,7 @@ impl MockFilterMapProvider {
     /// Add filter rows for an address at specific log indices
     pub fn add_address_rows(&self, address: &Address, log_indices: &[u64]) {
         let addr_value = address_value(address);
-        
+
         // Group by map index
         let mut map_columns: HashMap<u32, Vec<u64>> = HashMap::new();
         for &log_index in log_indices {
@@ -85,7 +84,7 @@ impl MockFilterMapProvider {
     /// Add filter rows for a topic at specific log indices
     pub fn add_topic_rows(&self, topic: &B256, log_indices: &[u64]) {
         let topic_value = topic_value(topic);
-        
+
         // Group by map index
         let mut map_columns: HashMap<u32, Vec<u64>> = HashMap::new();
         for &log_index in log_indices {

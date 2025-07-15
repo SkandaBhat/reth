@@ -26,20 +26,21 @@ mod constants;
 mod matcher;
 mod params;
 mod processor;
+mod provider;
 mod query;
 pub mod storage;
 mod types;
 mod utils;
 
-
-#[cfg(any(test, feature = "test-utils"))]
+#[cfg(any(test, feature = "test-utils", doctest))]
 pub mod test_utils;
 
 pub use builder::{FilterMapBuilder, LogValueIterator, RenderedMap};
 pub use constants::{DEFAULT_PARAMS, EXPECTED_MATCHES, MAX_LAYERS, RANGE_TEST_PARAMS};
-pub use matcher::{FilterMapProvider, Matcher};
+pub use matcher::Matcher;
 pub use params::FilterMapParams;
 pub use processor::FilterMapsProcessor;
+pub use provider::FilterMapProvider;
 pub use query::{address_to_log_value, query_logs, topic_to_log_value, verify_log_matches_filter};
 pub use types::{
     FilterError, FilterResult, LogFilter, MatchOrderStats, MatcherResult, PotentialMatches,

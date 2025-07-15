@@ -15,9 +15,7 @@ use std::{
     time::Instant,
 };
 
-pub(crate) mod provider;
-
-pub use provider::FilterMapProvider;
+use crate::provider::FilterMapProvider;
 
 /// A matcher that can search for logs matching specific criteria.
 ///
