@@ -123,7 +123,7 @@ impl LogValueIterator {
 }
 
 /// Builds filter maps from log data.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FilterMapBuilder {
     params: FilterMapParams,
     current_map: FilterMap,
@@ -198,7 +198,7 @@ impl FilterMapBuilder {
 }
 
 /// Represents a completed filter map with metadata.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct RenderedMap {
     /// The filter map data.
     pub filter_map: FilterMap,

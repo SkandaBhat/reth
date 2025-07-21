@@ -3,10 +3,12 @@
 //! This module defines the storage representations of filter maps data
 //! that can be stored in the database.
 
+use crate::FilterResult;
 use alloy_primitives::{BlockNumber, B256};
 #[cfg(feature = "reth-codecs")]
 use reth_codecs::Compact;
 use serde::{Deserialize, Serialize};
+use std::vec::Vec;
 
 /// Block number to log value index mapping.
 ///
@@ -106,4 +108,54 @@ impl From<&[u64]> for StoredFilterMapRow {
     fn from(columns: &[u64]) -> Self {
         Self::new(columns.to_vec())
     }
+}
+
+/// Type alias for filter map rows.
+///
+/// For the provider traits, we use `StoredFilterMapRow` directly.
+pub type FilterMapRow = StoredFilterMapRow;
+
+/// Provider trait for reading filter map data.
+pub trait FilterMapsReader: Send + Sync {
+    /// Get filter map rows for given map and row indices.
+    fn get_filter_map_rows(
+        &self,
+        map_index: u32,
+        row_indices: &[u32],
+    ) -> FilterResult<Vec<FilterMapRow>>;
+
+    /// Get block to log value pointer.
+    fn get_block_lv_pointer(&self, block: BlockNumber) -> FilterResult<Option<u64>>;
+
+    /// Get the last block info for a specific filter map.
+    fn get_filter_map_last_block(&self, map_index: u32)
+        -> FilterResult<Option<FilterMapLastBlock>>;
+
+    /// Get the filter maps metadata.
+    fn get_filter_maps_range(&self) -> FilterResult<Option<FilterMapsRange>>;
+
+    // TODO: Implement in storage PR
+}
+
+/// Provider trait for writing filter map data.
+pub trait FilterMapsWriter: Send + Sync {
+    /// Store filter map rows.
+    fn store_filter_map_rows(
+        &self,
+        map_index: u32,
+        rows: Vec<(u32, FilterMapRow)>,
+    ) -> FilterResult<()>;
+
+    /// Store block to log value pointer mapping.
+    fn store_block_lv_pointer(&self, block: BlockNumber, lv_pointer: u64) -> FilterResult<()>;
+
+    /// Store the last block info for a filter map.
+    fn store_filter_map_last_block(
+        &self,
+        map_index: u32,
+        last_block: FilterMapLastBlock,
+    ) -> FilterResult<()>;
+
+    /// Update the filter maps metadata.
+    fn update_filter_maps_range(&self, range: FilterMapsRange) -> FilterResult<()>;
 }

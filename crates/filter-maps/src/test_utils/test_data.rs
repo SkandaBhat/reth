@@ -23,16 +23,19 @@ pub const TEST_TOPICS: &[B256] = &[
 ];
 
 /// Generate test blocks with logs (placeholder - to be implemented)
+#[allow(clippy::missing_const_for_fn)]
 pub fn generate_test_blocks_with_logs(_num_blocks: u64, _logs_per_block: u64) -> Vec<()> {
     vec![]
 }
 
 /// Generate receipts with specific log patterns (placeholder - to be implemented)
+#[allow(clippy::missing_const_for_fn)]
 pub fn generate_receipts_with_logs(_patterns: Vec<Vec<(Address, Vec<B256>)>>) -> Vec<()> {
     vec![]
 }
 
 /// Build filter rows from logs (placeholder - to be implemented)
+#[allow(clippy::missing_const_for_fn)]
 pub fn build_filter_rows_from_logs(_logs: &[()], _params: ()) -> Vec<(u32, Vec<u8>)> {
     vec![]
 }

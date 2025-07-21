@@ -8551,10 +8551,16 @@ dependencies = [
  "rand 0.9.1",
  "reth-codecs",
  "reth-errors",
+ "reth-ethereum-primitives",
+ "reth-provider",
+ "reth-storage-api",
+ "reth-storage-errors",
+ "reth-testing-utils",
  "serde",
  "sha2 0.10.9",
  "test-fuzz",
  "thiserror 2.0.12",
+ "tokio",
 ]
 
 [[package]]

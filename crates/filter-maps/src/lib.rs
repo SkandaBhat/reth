@@ -12,6 +12,24 @@
 //! - Better storage efficiency compared to bloom filters
 //! - Support for range queries across blocks
 //! - Multi-layer overflow handling for collision management
+//!
+//! ## Usage
+//!
+//! ```rust
+//! use reth_filter_maps::{FilterMapsProcessor, FilterMapParams};
+//! use reth_filter_maps::storage::{FilterMapsReader, FilterMapsWriter};
+//!
+//! // Create a processor with storage
+//! let params = FilterMapParams::default();
+//! let storage = MyStorage::new();
+//! let mut processor = FilterMapsProcessor::new(params, storage);
+//!
+//! // Process blocks
+//! processor.process_block(block_number, block_hash, &receipts)?;
+//!
+//! // Query logs
+//! let logs = query_logs(provider, from_block, to_block, addresses, topics)?;
+//! ```
 
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/paradigmxyz/reth/main/assets/reth-docs.png",
@@ -35,6 +53,8 @@ mod utils;
 #[cfg(any(test, feature = "test-utils", doctest))]
 pub mod test_utils;
 
+use alloy_primitives::{BlockNumber, B256};
+use alloy_rpc_types_eth::Receipt;
 pub use builder::{FilterMapBuilder, LogValueIterator, RenderedMap};
 pub use constants::{DEFAULT_PARAMS, EXPECTED_MATCHES, MAX_LAYERS, RANGE_TEST_PARAMS};
 pub use matcher::Matcher;
@@ -42,11 +62,17 @@ pub use params::FilterMapParams;
 pub use processor::FilterMapsProcessor;
 pub use provider::FilterMapProvider;
 pub use query::{address_to_log_value, query_logs, topic_to_log_value, verify_log_matches_filter};
+pub use storage::{FilterMapRow, FilterMapsRange, FilterMapsReader, FilterMapsWriter};
 pub use types::{
     FilterError, FilterResult, LogFilter, MatchOrderStats, MatcherResult, PotentialMatches,
     RuntimeStats, RuntimeStatsSummary,
 };
 pub use utils::{address_value, topic_value};
+
+pub trait FilterMapExt {
+    // Convert a filter map to storage rows.
+    fn to_storage_rows(&self) -> Vec<(u32, FilterMapRow)>;
+}
 
 /// A full or partial in-memory representation of a filter map where rows are
 /// allowed to have a nil value meaning the row is not stored in the structure.
@@ -55,6 +81,22 @@ pub use utils::{address_value, topic_value};
 /// a batch of changes to the structure. In either case a nil value should be
 /// interpreted as transparent (uncached/unchanged).
 pub type FilterMap = Vec<FilterRow>;
+
+impl FilterMapExt for FilterMap {
+    fn to_storage_rows(&self) -> Vec<(u32, FilterMapRow)> {
+        self.iter()
+            .enumerate()
+            .filter_map(|(row_idx, columns)| {
+                if columns.is_empty() {
+                    None
+                } else {
+                    let cols_u64: Vec<u64> = columns.iter().map(|&c| c as u64).collect();
+                    Some((row_idx as u32, FilterMapRow::new(cols_u64)))
+                }
+            })
+            .collect()
+    }
+}
 
 /// `FilterRow` encodes a single row of a filter map as a list of column indices.
 /// Note that the values are always stored in the same order as they were added
@@ -66,9 +108,25 @@ pub type FilterRow = Vec<u64>;
 
 /// `FilterMaps` is a collection of filter maps.
 #[derive(Debug, Clone)]
-pub struct FilterMaps {
+pub struct FilterMaps<S>
+where
+    S: FilterMapsReader + FilterMapsWriter,
+{
     /// The parameters used to create the filter maps.
     pub params: FilterMapParams,
-    /// The filter maps.
-    pub filter_maps: Vec<FilterMap>,
+    /// The processor.
+    pub processor: FilterMapsProcessor<S>,
+}
+
+impl<S> FilterMaps<S>
+where
+    S: FilterMapsReader + FilterMapsWriter,
+{
+    /// Creates a new filter maps instance.
+    pub fn new(params: FilterMapParams, storage: S) -> Self {
+        Self {
+            params: params.clone(),
+            processor: FilterMapsProcessor::new(params.clone(), storage),
+        }
+    }
 }

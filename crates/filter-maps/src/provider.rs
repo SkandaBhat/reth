@@ -5,8 +5,7 @@
 //! remote prover implementations for EIP-7745.
 
 use crate::{params::FilterMapParams, FilterRow};
-use alloy_primitives::BlockNumber;
-use alloy_rpc_types_eth::Log;
+use alloy_primitives::{BlockNumber, Log};
 use reth_errors::ProviderResult;
 
 /// Provider interface for accessing log index data structures.

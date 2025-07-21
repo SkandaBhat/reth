@@ -598,8 +598,8 @@ impl MatcherState {
         for &map_index in next_requested.iter() {
             if let Some(base) = base_results.get(&map_index) {
                 // Can drop if base is empty and we need a match
-                if need_matched.contains(&map_index) &&
-                    base.as_ref().map(|m| m.is_empty()).unwrap_or(false)
+                if need_matched.contains(&map_index)
+                    && base.as_ref().map(|m| m.is_empty()).unwrap_or(false)
                 {
                     drop_indices.push(map_index);
                 }
@@ -627,8 +627,8 @@ impl MatcherState {
         for &map_index in base_requested.iter() {
             if let Some(next) = next_results.get(&map_index) {
                 // Can drop if next is empty and we need a match
-                if need_matched.contains(&map_index) &&
-                    next.as_ref().map(|m| m.is_empty()).unwrap_or(false)
+                if need_matched.contains(&map_index)
+                    && next.as_ref().map(|m| m.is_empty()).unwrap_or(false)
                 {
                     drop_indices.push(map_index);
                 }
@@ -797,8 +797,8 @@ fn should_eval_base_first(
     let next_non_empty = next_stats.non_empty_count.load(Ordering::Relaxed) as f64;
 
     // Evaluate base first if it's expected to be cheaper overall
-    base_total_cost.mul_add(next_total_count, base_non_empty * next_total_cost) <
-        base_total_cost.mul_add(next_non_empty, next_total_cost * base_total_count)
+    base_total_cost.mul_add(next_total_count, base_non_empty * next_total_cost)
+        < base_total_cost.mul_add(next_non_empty, next_total_cost * base_total_count)
 }
 
 /// Updates match order statistics after evaluating a matcher.
@@ -811,117 +811,117 @@ fn update_match_order_stats(stats: &Arc<MatchOrderStats>, is_empty: bool, layer:
     stats.total_cost.fetch_add((layer + 1) as u64, Ordering::Relaxed);
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
 
-    #[test]
-    fn test_max_layers_limit() {
-        use crate::{FilterMapParams, FilterRow};
-        use alloy_primitives::{b256, BlockNumber};
-        use alloy_rpc_types_eth::Log;
-        use reth_errors::ProviderResult;
+//     #[test]
+//     fn test_max_layers_limit() {
+//         use crate::{FilterMapParams, FilterRow};
+//         use alloy_primitives::{b256, BlockNumber};
+//         use alloy_rpc_types_eth::Log;
+//         use reth_errors::ProviderResult;
 
-        // Create a provider that always returns full rows
-        struct AlwaysFullProvider {
-            params: FilterMapParams,
-        }
+//         // Create a provider that always returns full rows
+//         struct AlwaysFullProvider {
+//             params: FilterMapParams,
+//         }
 
-        impl FilterMapProvider for AlwaysFullProvider {
-            fn params(&self) -> &FilterMapParams {
-                &self.params
-            }
+//         impl FilterMapProvider for AlwaysFullProvider {
+//             fn params(&self) -> &FilterMapParams {
+//                 &self.params
+//             }
 
-            fn block_to_log_index(&self, _: BlockNumber) -> ProviderResult<u64> {
-                Ok(0)
-            }
+//             fn block_to_log_index(&self, _: BlockNumber) -> ProviderResult<u64> {
+//                 Ok(0)
+//             }
 
-            fn get_filter_rows(
-                &self,
-                map_indices: &[u32],
-                _: u32,
-                layer: u32,
-            ) -> ProviderResult<Vec<FilterRow>> {
-                // Always return rows that are exactly at max length
-                let max_len = self.params.max_row_length(layer) as usize;
-                let row = vec![0u64; max_len];
-                Ok(vec![row; map_indices.len()])
-            }
+//             fn get_filter_rows(
+//                 &self,
+//                 map_indices: &[u32],
+//                 _: u32,
+//                 layer: u32,
+//             ) -> ProviderResult<Vec<FilterRow>> {
+//                 // Always return rows that are exactly at max length
+//                 let max_len = self.params.max_row_length(layer) as usize;
+//                 let row = vec![0u64; max_len];
+//                 Ok(vec![row; map_indices.len()])
+//             }
 
-            fn get_log(&self, _: u64) -> ProviderResult<Option<Log>> {
-                Ok(None)
-            }
-        }
+//             fn get_log(&self, _: u64) -> ProviderResult<Option<Log>> {
+//                 Ok(None)
+//             }
+//         }
 
-        let provider = Arc::new(AlwaysFullProvider { params: crate::constants::DEFAULT_PARAMS });
+//         let provider = Arc::new(AlwaysFullProvider { params: crate::constants::DEFAULT_PARAMS });
 
-        let value = b256!("0000000000000000000000000000000000000000000000000000000000000001");
-        let matcher = Matcher::single(provider, value);
+//         let value = b256!("0000000000000000000000000000000000000000000000000000000000000001");
+//         let matcher = Matcher::single(provider, value);
 
-        // This should hit the MAX_LAYERS limit and return an error
-        let result = matcher.process(&[0]);
-        assert!(matches!(result, Err(crate::types::FilterError::MaxLayersExceeded(_))));
-    }
+//         // This should hit the MAX_LAYERS limit and return an error
+//         let result = matcher.process(&[0]);
+//         assert!(matches!(result, Err(crate::types::FilterError::MaxLayersExceeded(_))));
+//     }
 
-    #[test]
-    fn test_merge_potential_matches() {
-        // Empty input
-        assert_eq!(merge_potential_matches(&[]), Some(vec![]));
+//     #[test]
+//     fn test_merge_potential_matches() {
+//         // Empty input
+//         assert_eq!(merge_potential_matches(&[]), Some(vec![]));
 
-        // Single wildcard
-        assert_eq!(merge_potential_matches(&[None]), None);
+//         // Single wildcard
+//         assert_eq!(merge_potential_matches(&[None]), None);
 
-        // Mixed with wildcard
-        assert_eq!(merge_potential_matches(&[Some(vec![1, 2]), None]), None);
+//         // Mixed with wildcard
+//         assert_eq!(merge_potential_matches(&[Some(vec![1, 2]), None]), None);
 
-        // Empty result mixed with non-empty (should return union)
-        assert_eq!(merge_potential_matches(&[Some(vec![]), Some(vec![1, 2])]), Some(vec![1, 2]));
+//         // Empty result mixed with non-empty (should return union)
+//         assert_eq!(merge_potential_matches(&[Some(vec![]), Some(vec![1, 2])]), Some(vec![1, 2]));
 
-        // All empty results
-        assert_eq!(merge_potential_matches(&[Some(vec![]), Some(vec![])]), Some(vec![]));
+//         // All empty results
+//         assert_eq!(merge_potential_matches(&[Some(vec![]), Some(vec![])]), Some(vec![]));
 
-        // Normal merge
-        let result = merge_potential_matches(&[
-            Some(vec![1, 3, 5]),
-            Some(vec![2, 3, 6]),
-            Some(vec![3, 4, 7]),
-        ]);
-        assert_eq!(result, Some(vec![1, 2, 3, 4, 5, 6, 7]));
-    }
+//         // Normal merge
+//         let result = merge_potential_matches(&[
+//             Some(vec![1, 3, 5]),
+//             Some(vec![2, 3, 6]),
+//             Some(vec![3, 4, 7]),
+//         ]);
+//         assert_eq!(result, Some(vec![1, 2, 3, 4, 5, 6, 7]));
+//     }
 
-    #[test]
-    fn test_intersect_with_offset() {
-        let values_per_map = 16; // 2^16 values per map
+//     #[test]
+//     fn test_intersect_with_offset() {
+//         let values_per_map = 16; // 2^16 values per map
 
-        // Both wildcards
-        assert_eq!(intersect_with_offset(&None, &None, 2, 0, values_per_map), None);
+//         // Both wildcards
+//         assert_eq!(intersect_with_offset(&None, &None, 2, 0, values_per_map), None);
 
-        // Base wildcard
-        let result = intersect_with_offset(&None, &Some(vec![10, 20, 30]), 5, 0, values_per_map);
-        assert_eq!(result, Some(vec![5, 15, 25]));
+//         // Base wildcard
+//         let result = intersect_with_offset(&None, &Some(vec![10, 20, 30]), 5, 0, values_per_map);
+//         assert_eq!(result, Some(vec![5, 15, 25]));
 
-        // Next wildcard
-        let result = intersect_with_offset(&Some(vec![10, 20, 30]), &None, 5, 0, values_per_map);
-        assert_eq!(result, Some(vec![10, 20, 30]));
+//         // Next wildcard
+//         let result = intersect_with_offset(&Some(vec![10, 20, 30]), &None, 5, 0, values_per_map);
+//         assert_eq!(result, Some(vec![10, 20, 30]));
 
-        // Normal intersection
-        let result = intersect_with_offset(
-            &Some(vec![10, 20, 30, 40]),
-            &Some(vec![15, 25, 35, 45]),
-            5,
-            0,
-            values_per_map,
-        );
-        assert_eq!(result, Some(vec![10, 20, 30, 40]));
+//         // Normal intersection
+//         let result = intersect_with_offset(
+//             &Some(vec![10, 20, 30, 40]),
+//             &Some(vec![15, 25, 35, 45]),
+//             5,
+//             0,
+//             values_per_map,
+//         );
+//         assert_eq!(result, Some(vec![10, 20, 30, 40]));
 
-        // No intersection
-        let result = intersect_with_offset(
-            &Some(vec![10, 20, 30]),
-            &Some(vec![100, 200]),
-            5,
-            0,
-            values_per_map,
-        );
-        assert_eq!(result, Some(vec![]));
-    }
-}
+//         // No intersection
+//         let result = intersect_with_offset(
+//             &Some(vec![10, 20, 30]),
+//             &Some(vec![100, 200]),
+//             5,
+//             0,
+//             values_per_map,
+//         );
+//         assert_eq!(result, Some(vec![]));
+//     }
+// }

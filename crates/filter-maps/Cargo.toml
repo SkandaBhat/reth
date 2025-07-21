@@ -18,6 +18,8 @@ alloy-rpc-types-eth.workspace = true
 
 # reth
 reth-errors.workspace = true
+reth-ethereum-primitives.workspace = true
+
 
 # misc
 serde = { workspace = true, features = ["derive"] }
@@ -37,10 +39,15 @@ arbitrary = { workspace = true, features = ["derive"] }
 rand.workspace = true
 test-fuzz.workspace = true
 
+# For integration tests
+reth-provider = { workspace = true, features = ["test-utils"] }
+reth-ethereum-primitives.workspace = true
+tokio = { workspace = true, features = ["full"] }
+reth-testing-utils.workspace = true
+reth-storage-api.workspace = true
+reth-storage-errors.workspace = true
+
 [features]
 default = []
 reth-codecs = ["dep:reth-codecs", "dep:modular-bitfield"]
 test-utils = []
-
-[profile.test]
-features = ["test-utils"]

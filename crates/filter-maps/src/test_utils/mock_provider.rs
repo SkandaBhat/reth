@@ -4,10 +4,9 @@ use crate::{
     constants::DEFAULT_PARAMS,
     params::FilterMapParams,
     utils::{address_value, topic_value},
-    FilterMapProvider, FilterRow,
+    FilterMapProvider, FilterRow, RenderedMap,
 };
-use alloy_primitives::{Address, BlockNumber, B256};
-use alloy_rpc_types_eth::Log;
+use alloy_primitives::{Address, BlockNumber, Log, B256};
 use reth_errors::ProviderResult;
 use std::{
     collections::HashMap,
@@ -97,6 +96,22 @@ impl MockFilterMapProvider {
         for (map_index, columns) in map_columns {
             let row_index = self.params.row_index(map_index, 0, &topic_value);
             self.add_filter_row(map_index, row_index, 0, columns);
+        }
+    }
+
+    /// Store a rendered filter map
+    pub fn store_filter_map(&mut self, rendered: &RenderedMap) {
+        // Store block pointers
+        for (block_num, lv_index) in &rendered.block_lv_pointers {
+            self.add_block(*block_num, *lv_index);
+        }
+
+        // Store filter rows - directly insert since this represents the complete row
+        let mut rows = self.filter_rows.lock().unwrap();
+        for (row_idx, row) in rendered.filter_map.iter().enumerate() {
+            if !row.is_empty() {
+                rows.insert((rendered.map_index, row_idx as u32, 0), vec![row.clone()]);
+            }
         }
     }
 }
