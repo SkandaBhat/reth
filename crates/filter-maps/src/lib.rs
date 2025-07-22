@@ -50,11 +50,6 @@ pub mod storage;
 mod types;
 mod utils;
 
-#[cfg(any(test, feature = "test-utils", doctest))]
-pub mod test_utils;
-
-use alloy_primitives::{BlockNumber, B256};
-use alloy_rpc_types_eth::Receipt;
 pub use builder::{FilterMapBuilder, LogValueIterator, RenderedMap};
 pub use constants::{DEFAULT_PARAMS, EXPECTED_MATCHES, MAX_LAYERS, RANGE_TEST_PARAMS};
 pub use matcher::Matcher;

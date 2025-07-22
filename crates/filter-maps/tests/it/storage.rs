@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 pub(crate) struct InMemoryFilterMapsProvider {
     params: reth_filter_maps::FilterMapParams,
     filter_rows: Arc<Mutex<HashMap<(u32, u32), FilterMapRow>>>,
-    block_pointers: Arc<Mutex<HashMap<BlockNumber, u64>>>, // block number -> log index
+    block_pointers: Arc<Mutex<HashMap<BlockNumber, u64>>>,
     last_blocks: Arc<Mutex<HashMap<u32, FilterMapLastBlock>>>,
     range: Arc<Mutex<Option<FilterMapsRange>>>,
     provider: Arc<MockEthProvider>,
@@ -184,15 +184,15 @@ impl reth_filter_maps::FilterMapProvider for InMemoryFilterMapsProvider {
                 // Find the block that contains this log_index
                 // We need to find the last block whose lv_index <= log_index
                 let mut result_block = None;
-                
+
                 for i in 0..blocks.len() {
                     let (block, lv) = blocks[i];
-                    
+
                     // Skip blocks that start after our log_index
                     if *lv > log_index {
                         break;
                     }
-                    
+
                     // Check if this block contains the log
                     if i + 1 < blocks.len() {
                         let (_, next_lv) = blocks[i + 1];
@@ -205,7 +205,7 @@ impl reth_filter_maps::FilterMapProvider for InMemoryFilterMapsProvider {
                         result_block = Some(*block);
                     }
                 }
-                
+
                 result_block
             };
 
@@ -239,8 +239,6 @@ impl reth_filter_maps::FilterMapProvider for InMemoryFilterMapsProvider {
                 current_lv = log_end;
             }
         }
-
-        // For testing, return None - in real implementation this would fetch from storage
         Ok(None)
     }
 }

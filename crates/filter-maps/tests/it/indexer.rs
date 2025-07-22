@@ -1,7 +1,7 @@
 use crate::storage::InMemoryFilterMapsProvider;
 use alloy_primitives::BlockNumber;
 use alloy_rpc_types_eth::BlockHashOrNumber;
-use reth_filter_maps::{FilterMapParams, FilterMapsProcessor, FilterResult, FilterMapsWriter};
+use reth_filter_maps::{FilterMapParams, FilterMapsProcessor, FilterMapsWriter, FilterResult};
 use reth_provider::test_utils::MockEthProvider;
 use reth_provider::{BlockReader, ReceiptProvider};
 use std::ops::RangeInclusive;
@@ -17,7 +17,7 @@ pub(crate) async fn index(
     let mut indexer = FilterMapsProcessor::new(params.clone(), storage.as_ref().clone());
 
     let range_vec: Vec<_> = range.clone().collect();
-    for (i, block_number) in range_vec.iter().enumerate() {
+    for (_, block_number) in range_vec.iter().enumerate() {
         let block = provider
             .block(BlockHashOrNumber::Number(*block_number))
             .unwrap_or_default()
@@ -34,7 +34,7 @@ pub(crate) async fn index(
         // The map is already stored by finalize_current_map, so we don't need to do anything
         println!("Finalized last map with index: {}", map.map_index);
     }
-    
+
     // Update the filter maps range to reflect what we've indexed
     let (first_block, last_block) = indexer.indexed_range();
     let current_lv_index = indexer.current_lv_index();
@@ -49,6 +49,6 @@ pub(crate) async fn index(
         version: 1,
     };
     storage.as_ref().update_filter_maps_range(range_metadata)?;
-    
+
     Ok(())
 }
