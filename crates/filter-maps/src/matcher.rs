@@ -5,14 +5,13 @@
 
 use crate::{
     params::FilterMapParams,
-    types::{FilterResult, MatchOrderStats, MatcherResult, PotentialMatches, RuntimeStats},
+    types::{FilterResult, MatcherResult, PotentialMatches},
     FilterRow,
 };
 use alloy_primitives::B256;
 use std::{
     collections::{HashMap, HashSet},
-    sync::{atomic::Ordering, Arc},
-    time::Instant,
+    sync::Arc,
 };
 
 use crate::provider::FilterMapProvider;
@@ -29,8 +28,6 @@ pub enum Matcher {
         provider: Arc<dyn FilterMapProvider>,
         /// The value to match.
         value: B256,
-        /// Runtime statistics for this matcher.
-        stats: Arc<RuntimeStats>,
     },
     /// Matches any of the child matchers (OR operation).
     Any {
@@ -47,28 +44,20 @@ pub enum Matcher {
         next: Box<Matcher>,
         /// Offset between base and next.
         offset: u64,
-        /// Statistics for optimizing evaluation order.
-        base_stats: Arc<MatchOrderStats>,
-        /// Statistics for optimizing evaluation order for the next matcher.
-        next_stats: Arc<MatchOrderStats>,
     },
 }
 
 impl std::fmt::Debug for Matcher {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Single { value, stats, .. } => {
-                f.debug_struct("Single").field("value", value).field("stats", stats).finish()
-            }
+            Self::Single { value, .. } => f.debug_struct("Single").field("value", value).finish(),
             Self::Any { matchers } => f.debug_struct("Any").field("matchers", matchers).finish(),
-            Self::Sequence { params, base, next, offset, base_stats, next_stats } => f
+            Self::Sequence { params, base, next, offset } => f
                 .debug_struct("Sequence")
                 .field("params", params)
                 .field("base", base)
                 .field("next", next)
                 .field("offset", offset)
-                .field("base_stats", base_stats)
-                .field("next_stats", next_stats)
                 .finish(),
         }
     }
@@ -77,7 +66,7 @@ impl std::fmt::Debug for Matcher {
 impl Matcher {
     /// Creates a new single value matcher.
     pub fn single(provider: Arc<dyn FilterMapProvider>, value: B256) -> Self {
-        Self::Single { provider, value, stats: Arc::new(RuntimeStats::default()) }
+        Self::Single { provider, value }
     }
 
     /// Creates a new ANY matcher that matches if any child matches.
@@ -92,14 +81,7 @@ impl Matcher {
         next: Box<Self>,
         offset: u64,
     ) -> Self {
-        Self::Sequence {
-            params,
-            base,
-            next,
-            offset,
-            base_stats: Arc::new(MatchOrderStats::default()),
-            next_stats: Arc::new(MatchOrderStats::default()),
-        }
+        Self::Sequence { params, base, next, offset }
     }
 
     /// Creates a sequence matcher from a list of matchers.
@@ -262,10 +244,9 @@ impl MatcherState {
     fn process_layer(&mut self, layer: u32) -> FilterResult<Vec<MatcherResult>> {
         match &mut self.state {
             MatcherVariantState::Single { active_indices, filter_rows } => match &self.matcher {
-                Matcher::Single { provider, value, stats } => Self::process_single_layer_static(
+                Matcher::Single { provider, value } => Self::process_single_layer_static(
                     provider,
                     value,
-                    stats,
                     layer,
                     active_indices,
                     filter_rows,
@@ -284,22 +265,18 @@ impl MatcherState {
                 base_results,
                 next_results,
             } => match &self.matcher {
-                Matcher::Sequence { params, offset, base_stats, next_stats, .. } => {
-                    Self::process_sequence_layer_static(
-                        params,
-                        *offset,
-                        base_stats,
-                        next_stats,
-                        layer,
-                        base_state,
-                        next_state,
-                        need_matched,
-                        base_requested,
-                        next_requested,
-                        base_results,
-                        next_results,
-                    )
-                }
+                Matcher::Sequence { params, offset, .. } => Self::process_sequence_layer_static(
+                    params,
+                    *offset,
+                    layer,
+                    base_state,
+                    next_state,
+                    need_matched,
+                    base_requested,
+                    next_requested,
+                    base_results,
+                    next_results,
+                ),
                 _ => unreachable!(),
             },
         }
@@ -318,7 +295,6 @@ impl MatcherState {
     fn process_single_layer_static(
         provider: &Arc<dyn FilterMapProvider>,
         value: &B256,
-        stats: &Arc<RuntimeStats>,
         layer: u32,
         active_indices: &mut Vec<u32>,
         filter_rows: &mut HashMap<u32, Vec<FilterRow>>,
@@ -345,23 +321,8 @@ impl MatcherState {
             }
 
             // Fetch rows for the group
-            let fetch_start = Instant::now();
             let group_indices = &active_indices[group_start..group_end];
             let group_rows = provider.get_filter_rows(group_indices, row_index, layer)?;
-            let fetch_duration = fetch_start.elapsed();
-
-            // Update statistics
-            if layer == 0 {
-                stats.fetch_first_count.fetch_add(1, Ordering::Relaxed);
-                stats
-                    .fetch_first_duration_ns
-                    .fetch_add(fetch_duration.as_nanos() as u64, Ordering::Relaxed);
-            } else {
-                stats.fetch_more_count.fetch_add(1, Ordering::Relaxed);
-                stats
-                    .fetch_more_duration_ns
-                    .fetch_add(fetch_duration.as_nanos() as u64, Ordering::Relaxed);
-            }
 
             // Process each map in the group
             for (i, &map_index) in group_indices.iter().enumerate() {
@@ -371,29 +332,13 @@ impl MatcherState {
                 let rows =
                     filter_rows.get_mut(&map_index).expect("Map index should exist in filter_rows");
 
-                // Update statistics
-                if layer == 0 {
-                    stats.fetch_first_rows.fetch_add(filter_row.len() as u64, Ordering::Relaxed);
-                } else {
-                    stats.fetch_more_rows.fetch_add(filter_row.len() as u64, Ordering::Relaxed);
-                }
-
                 // Add the row
                 rows.push(filter_row.clone());
 
                 // Check if we've reached the maximum row length for this layer
                 if (filter_row.len() as u32) < params.max_row_length(layer) {
                     // Process matches
-                    let process_start = Instant::now();
                     let matches = params.potential_matches(rows, map_index, value)?;
-                    let process_duration = process_start.elapsed();
-
-                    // Update statistics
-                    stats.process_count.fetch_add(1, Ordering::Relaxed);
-                    stats
-                        .process_duration_ns
-                        .fetch_add(process_duration.as_nanos() as u64, Ordering::Relaxed);
-                    stats.process_matches.fetch_add(matches.len() as u64, Ordering::Relaxed);
 
                     results.push(MatcherResult { map_index, matches: Some(matches) });
 
@@ -464,8 +409,6 @@ impl MatcherState {
     fn process_sequence_layer_static(
         params: &Arc<FilterMapParams>,
         offset: u64,
-        base_stats: &Arc<MatchOrderStats>,
-        next_stats: &Arc<MatchOrderStats>,
         layer: u32,
         base_state: &mut Self,
         next_state: &mut Self,
@@ -475,43 +418,11 @@ impl MatcherState {
         base_results: &mut HashMap<u32, PotentialMatches>,
         next_results: &mut HashMap<u32, PotentialMatches>,
     ) -> FilterResult<Vec<MatcherResult>> {
-        // Determine evaluation order
-        let base_first = should_eval_base_first(base_stats, next_stats);
+        Self::eval_base_static(layer, base_state, base_results, base_requested)?;
+        Self::drop_next_if_needed_static(base_results, need_matched, next_requested, next_state);
 
-        // Process in optimal order
-        if base_first {
-            Self::eval_base_static(layer, base_state, base_results, base_requested, base_stats)?;
-            Self::drop_next_if_needed_static(
-                base_results,
-                need_matched,
-                next_requested,
-                next_state,
-            );
-
-            Self::eval_next_static(layer, next_state, next_results, next_requested, next_stats)?;
-            Self::drop_base_if_needed_static(
-                next_results,
-                need_matched,
-                base_requested,
-                base_state,
-            );
-        } else {
-            Self::eval_next_static(layer, next_state, next_results, next_requested, next_stats)?;
-            Self::drop_base_if_needed_static(
-                next_results,
-                need_matched,
-                base_requested,
-                base_state,
-            );
-
-            Self::eval_base_static(layer, base_state, base_results, base_requested, base_stats)?;
-            Self::drop_next_if_needed_static(
-                base_results,
-                need_matched,
-                next_requested,
-                next_state,
-            );
-        }
+        Self::eval_next_static(layer, next_state, next_results, next_requested)?;
+        Self::drop_base_if_needed_static(next_results, need_matched, base_requested, base_state);
 
         // Collect completed results
         let mut matched_results = Vec::new();
@@ -548,17 +459,12 @@ impl MatcherState {
         base_state: &mut Self,
         base_results: &mut HashMap<u32, PotentialMatches>,
         base_requested: &mut HashSet<u32>,
-        base_stats: &Arc<MatchOrderStats>,
     ) -> FilterResult<()> {
         let results = base_state.process_layer(layer)?;
 
         for result in results {
-            let is_empty = result.matches.as_ref().map(|m| m.is_empty()).unwrap_or(false);
             base_results.insert(result.map_index, result.matches);
             base_requested.remove(&result.map_index);
-
-            // Update statistics
-            update_match_order_stats(base_stats, is_empty, layer);
         }
 
         Ok(())
@@ -570,17 +476,12 @@ impl MatcherState {
         next_state: &mut Self,
         next_results: &mut HashMap<u32, PotentialMatches>,
         next_requested: &mut HashSet<u32>,
-        next_stats: &Arc<MatchOrderStats>,
     ) -> FilterResult<()> {
         let results = next_state.process_layer(layer)?;
 
         for result in results {
-            let is_empty = result.matches.as_ref().map(|m| m.is_empty()).unwrap_or(false);
             next_results.insert(result.map_index, result.matches);
             next_requested.remove(&result.map_index);
-
-            // Update statistics
-            update_match_order_stats(next_stats, is_empty, layer);
         }
 
         Ok(())
@@ -782,146 +683,3 @@ pub(crate) fn intersect_with_offset(
         }
     }
 }
-
-/// Determines if base should be evaluated before next based on statistics.
-fn should_eval_base_first(
-    base_stats: &Arc<MatchOrderStats>,
-    next_stats: &Arc<MatchOrderStats>,
-) -> bool {
-    let base_total_cost = base_stats.total_cost.load(Ordering::Relaxed) as f64;
-    let base_total_count = base_stats.total_count.load(Ordering::Relaxed) as f64;
-    let base_non_empty = base_stats.non_empty_count.load(Ordering::Relaxed) as f64;
-
-    let next_total_cost = next_stats.total_cost.load(Ordering::Relaxed) as f64;
-    let next_total_count = next_stats.total_count.load(Ordering::Relaxed) as f64;
-    let next_non_empty = next_stats.non_empty_count.load(Ordering::Relaxed) as f64;
-
-    // Evaluate base first if it's expected to be cheaper overall
-    base_total_cost.mul_add(next_total_count, base_non_empty * next_total_cost)
-        < base_total_cost.mul_add(next_non_empty, next_total_cost * base_total_count)
-}
-
-/// Updates match order statistics after evaluating a matcher.
-fn update_match_order_stats(stats: &Arc<MatchOrderStats>, is_empty: bool, layer: u32) {
-    // Always update statistics for accurate tracking
-    stats.total_count.fetch_add(1, Ordering::Relaxed);
-    if !is_empty {
-        stats.non_empty_count.fetch_add(1, Ordering::Relaxed);
-    }
-    stats.total_cost.fetch_add((layer + 1) as u64, Ordering::Relaxed);
-}
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-
-//     #[test]
-//     fn test_max_layers_limit() {
-//         use crate::{FilterMapParams, FilterRow};
-//         use alloy_primitives::{b256, BlockNumber};
-//         use alloy_rpc_types_eth::Log;
-//         use reth_errors::ProviderResult;
-
-//         // Create a provider that always returns full rows
-//         struct AlwaysFullProvider {
-//             params: FilterMapParams,
-//         }
-
-//         impl FilterMapProvider for AlwaysFullProvider {
-//             fn params(&self) -> &FilterMapParams {
-//                 &self.params
-//             }
-
-//             fn block_to_log_index(&self, _: BlockNumber) -> ProviderResult<u64> {
-//                 Ok(0)
-//             }
-
-//             fn get_filter_rows(
-//                 &self,
-//                 map_indices: &[u32],
-//                 _: u32,
-//                 layer: u32,
-//             ) -> ProviderResult<Vec<FilterRow>> {
-//                 // Always return rows that are exactly at max length
-//                 let max_len = self.params.max_row_length(layer) as usize;
-//                 let row = vec![0u64; max_len];
-//                 Ok(vec![row; map_indices.len()])
-//             }
-
-//             fn get_log(&self, _: u64) -> ProviderResult<Option<Log>> {
-//                 Ok(None)
-//             }
-//         }
-
-//         let provider = Arc::new(AlwaysFullProvider { params: crate::constants::DEFAULT_PARAMS });
-
-//         let value = b256!("0000000000000000000000000000000000000000000000000000000000000001");
-//         let matcher = Matcher::single(provider, value);
-
-//         // This should hit the MAX_LAYERS limit and return an error
-//         let result = matcher.process(&[0]);
-//         assert!(matches!(result, Err(crate::types::FilterError::MaxLayersExceeded(_))));
-//     }
-
-//     #[test]
-//     fn test_merge_potential_matches() {
-//         // Empty input
-//         assert_eq!(merge_potential_matches(&[]), Some(vec![]));
-
-//         // Single wildcard
-//         assert_eq!(merge_potential_matches(&[None]), None);
-
-//         // Mixed with wildcard
-//         assert_eq!(merge_potential_matches(&[Some(vec![1, 2]), None]), None);
-
-//         // Empty result mixed with non-empty (should return union)
-//         assert_eq!(merge_potential_matches(&[Some(vec![]), Some(vec![1, 2])]), Some(vec![1, 2]));
-
-//         // All empty results
-//         assert_eq!(merge_potential_matches(&[Some(vec![]), Some(vec![])]), Some(vec![]));
-
-//         // Normal merge
-//         let result = merge_potential_matches(&[
-//             Some(vec![1, 3, 5]),
-//             Some(vec![2, 3, 6]),
-//             Some(vec![3, 4, 7]),
-//         ]);
-//         assert_eq!(result, Some(vec![1, 2, 3, 4, 5, 6, 7]));
-//     }
-
-//     #[test]
-//     fn test_intersect_with_offset() {
-//         let values_per_map = 16; // 2^16 values per map
-
-//         // Both wildcards
-//         assert_eq!(intersect_with_offset(&None, &None, 2, 0, values_per_map), None);
-
-//         // Base wildcard
-//         let result = intersect_with_offset(&None, &Some(vec![10, 20, 30]), 5, 0, values_per_map);
-//         assert_eq!(result, Some(vec![5, 15, 25]));
-
-//         // Next wildcard
-//         let result = intersect_with_offset(&Some(vec![10, 20, 30]), &None, 5, 0, values_per_map);
-//         assert_eq!(result, Some(vec![10, 20, 30]));
-
-//         // Normal intersection
-//         let result = intersect_with_offset(
-//             &Some(vec![10, 20, 30, 40]),
-//             &Some(vec![15, 25, 35, 45]),
-//             5,
-//             0,
-//             values_per_map,
-//         );
-//         assert_eq!(result, Some(vec![10, 20, 30, 40]));
-
-//         // No intersection
-//         let result = intersect_with_offset(
-//             &Some(vec![10, 20, 30]),
-//             &Some(vec![100, 200]),
-//             5,
-//             0,
-//             values_per_map,
-//         );
-//         assert_eq!(result, Some(vec![]));
-//     }
-// }

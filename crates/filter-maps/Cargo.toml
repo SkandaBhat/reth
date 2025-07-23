@@ -16,6 +16,10 @@ workspace = true
 alloy-primitives.workspace = true
 alloy-rpc-types-eth.workspace = true
 
+# bytes
+bytes.workspace = true
+
+
 # reth
 reth-errors.workspace = true
 reth-ethereum-primitives.workspace = true
@@ -34,8 +38,6 @@ modular-bitfield = { workspace = true, optional = true }
 [dev-dependencies]
 # For tests
 alloy-consensus.workspace = true
-proptest.workspace = true
-arbitrary = { workspace = true, features = ["derive"] }
 rand.workspace = true
 test-fuzz.workspace = true
 

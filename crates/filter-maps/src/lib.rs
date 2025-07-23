@@ -39,29 +39,27 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
-mod builder;
 mod constants;
+mod indexer;
 mod matcher;
 mod params;
-mod processor;
 mod provider;
 mod query;
+mod state;
 pub mod storage;
 mod types;
 mod utils;
 
-pub use builder::{FilterMapBuilder, LogValueIterator, RenderedMap};
 pub use constants::{DEFAULT_PARAMS, EXPECTED_MATCHES, MAX_LAYERS, RANGE_TEST_PARAMS};
+pub use indexer::FilterMapsProcessor;
 pub use matcher::Matcher;
 pub use params::FilterMapParams;
-pub use processor::FilterMapsProcessor;
 pub use provider::FilterMapProvider;
 pub use query::{address_to_log_value, query_logs, topic_to_log_value, verify_log_matches_filter};
+pub use state::FilterMapsState;
 pub use storage::{FilterMapRow, FilterMapsRange, FilterMapsReader, FilterMapsWriter};
-pub use types::{
-    FilterError, FilterResult, LogFilter, MatchOrderStats, MatcherResult, PotentialMatches,
-    RuntimeStats, RuntimeStatsSummary,
-};
+pub use types::{FilterError, FilterResult, LogFilter, MatcherResult, PotentialMatches};
+
 pub use utils::{address_value, topic_value};
 
 pub trait FilterMapExt {
