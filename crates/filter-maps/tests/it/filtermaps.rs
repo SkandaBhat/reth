@@ -14,7 +14,7 @@ use crate::utils::{create_test_provider_with_random_blocks_and_receipts, get_ran
 use reth_filter_maps::query_logs;
 
 const START_BLOCK: BlockNumber = 0;
-const BLOCKS_COUNT: usize = 100;
+const BLOCKS_COUNT: usize = 1000;
 const TX_COUNT: u8 = 10;
 const LOG_COUNT: u8 = 10;
 const MAX_TOPICS: usize = 4;
@@ -53,7 +53,7 @@ async fn test_filter_map() {
     }
     println!("Total logs indexed: {}", total_logs);
     // do an iterative loop of 2000 times
-    for i in 0..2000 {
+    for i in 0..20000 {
         let (log, log_block_number) =
             get_random_log(provider.clone(), START_BLOCK, BLOCKS_COUNT).await;
 
@@ -62,9 +62,11 @@ async fn test_filter_map() {
         let topics: Vec<Vec<B256>> = log.topics().iter().map(|&topic| vec![topic]).collect();
 
         // search in a range around the logs block number, but clamp to indexed range
-        let from_block = log_block_number.saturating_sub(10000).max(START_BLOCK);
+        let from_block = log_block_number.saturating_sub(100).max(START_BLOCK);
         let to_block =
-            log_block_number.saturating_add(10000).min(START_BLOCK + BLOCKS_COUNT as u64 - 1);
+            log_block_number.saturating_add(100).min(START_BLOCK + BLOCKS_COUNT as u64 - 1);
+
+        println!("searching for log with address {:?} at block {}", log.address, log_block_number);
 
         let logs_result =
             query_logs(storage.clone(), from_block, to_block, addresses.clone(), topics.clone());
@@ -76,6 +78,8 @@ async fn test_filter_map() {
                 continue;
             }
         };
+
+        println!("found {} logs", logs.len());
 
         // Filter out false positives
         // let filtered_logs: Vec<_> = logs
@@ -93,6 +97,7 @@ async fn test_filter_map() {
         );
 
         for l in logs {
+            println!("found log with address {:?}", l.address);
             assert_eq!(l.address, log.address);
             assert_eq!(l.topics(), log.topics());
         }

@@ -16,19 +16,26 @@
 //! ## Usage
 //!
 //! ```rust
-//! use reth_filter_maps::{FilterMapsProcessor, FilterMapParams};
+//! use reth_filter_maps::{FilterMapAccumulator, FilterMapParams, extract_log_values_from_block};
 //! use reth_filter_maps::storage::{FilterMapsReader, FilterMapsWriter};
 //!
-//! // Create a processor with storage
+//! // Create an accumulator
 //! let params = FilterMapParams::default();
-//! let storage = MyStorage::new();
-//! let mut processor = FilterMapsProcessor::new(params, storage);
+//! let mut accumulator = FilterMapAccumulator::new(params, map_index);
 //!
-//! // Process blocks
-//! processor.process_block(block_number, block_hash, &receipts)?;
+//! // Extract log values from block
+//! let log_values = extract_log_values_from_block(
+//!     log_value_index,
+//!     block_number,
+//!     block_hash,
+//!     parent_hash,
+//!     receipts
+//! );
 //!
-//! // Query logs
-//! let logs = query_logs(provider, from_block, to_block, addresses, topics)?;
+//! // Process log values
+//! for log_value in log_values {
+//!     accumulator.add_log_value(log_value.index, log_value.value)?;
+//! }
 //! ```
 
 #![doc(
@@ -39,8 +46,8 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
+mod accumulator;
 mod constants;
-mod indexer;
 mod matcher;
 mod params;
 mod provider;
@@ -50,17 +57,19 @@ pub mod storage;
 mod types;
 mod utils;
 
+pub use accumulator::FilterMapAccumulator;
 pub use constants::{DEFAULT_PARAMS, EXPECTED_MATCHES, MAX_LAYERS, RANGE_TEST_PARAMS};
-pub use indexer::FilterMapsProcessor;
 pub use matcher::Matcher;
 pub use params::FilterMapParams;
 pub use provider::FilterMapProvider;
 pub use query::{address_to_log_value, query_logs, topic_to_log_value, verify_log_matches_filter};
-pub use state::FilterMapsState;
+pub use state::FilterMapAccumulatorState;
 pub use storage::{FilterMapRow, FilterMapsRange, FilterMapsReader, FilterMapsWriter};
-pub use types::{FilterError, FilterResult, LogFilter, MatcherResult, PotentialMatches};
-
-pub use utils::{address_value, topic_value};
+pub use types::{
+    FilterError, FilterMapMetadata, FilterResult, LogFilter, LogValue, MatcherResult,
+    PotentialMatches,
+};
+pub use utils::{address_value, extract_log_values_from_block, topic_value};
 
 pub trait FilterMapExt {
     // Convert a filter map to storage rows.
@@ -98,28 +107,3 @@ impl FilterMapExt for FilterMap {
 /// searching for a value but leaving the original order makes reverting to a
 /// previous state simpler.
 pub type FilterRow = Vec<u64>;
-
-/// `FilterMaps` is a collection of filter maps.
-#[derive(Debug, Clone)]
-pub struct FilterMaps<S>
-where
-    S: FilterMapsReader + FilterMapsWriter,
-{
-    /// The parameters used to create the filter maps.
-    pub params: FilterMapParams,
-    /// The processor.
-    pub processor: FilterMapsProcessor<S>,
-}
-
-impl<S> FilterMaps<S>
-where
-    S: FilterMapsReader + FilterMapsWriter,
-{
-    /// Creates a new filter maps instance.
-    pub fn new(params: FilterMapParams, storage: S) -> Self {
-        Self {
-            params: params.clone(),
-            processor: FilterMapsProcessor::new(params.clone(), storage),
-        }
-    }
-}

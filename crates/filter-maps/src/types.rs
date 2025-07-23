@@ -2,6 +2,15 @@
 
 use alloy_primitives::{Address, B256};
 
+#[derive(Debug, Clone)]
+pub struct LogValue {
+    pub block_number: u64,
+    pub block_hash: B256,
+    pub index: u64,
+    pub value: B256,
+    pub is_block_delimiter: bool,
+}
+
 /// Errors that can occur when using `FilterMaps`.
 #[derive(Debug, thiserror::Error)]
 pub enum FilterError {
@@ -71,6 +80,21 @@ pub struct MatcherResult {
     /// The potential matches found for this map
     /// None = wildcard (matches all), Some(vec) = specific matches
     pub matches: PotentialMatches,
+}
+
+/// Metadata for a completed filter map.
+#[derive(Debug, Clone, Default)]
+pub struct FilterMapMetadata {
+    /// Index of this map
+    pub map_index: u32,
+    /// First block that has logs in this map
+    pub first_block: u64,
+    /// Last block that has logs in this map
+    pub last_block: u64,
+    /// Hash of the last block
+    pub last_block_hash: B256,
+    /// Log value pointers for blocks starting in this map
+    pub block_lv_pointers: Vec<(u64, u64)>,
 }
 
 /// Filter criteria for log matching.

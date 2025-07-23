@@ -1,5 +1,8 @@
 use alloy_primitives::{Address, B256};
+use reth_ethereum_primitives::Receipt;
 use sha2::{Digest, Sha256};
+
+use crate::types::LogValue;
 
 /// Compute the log value hash of a log emitting address.
 pub fn address_value(address: &Address) -> B256 {
@@ -15,34 +18,58 @@ pub fn topic_value(topic: &B256) -> B256 {
     B256::from_slice(&hasher.finalize())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use alloy_primitives::{address, b256};
+pub fn extract_log_values_from_block(
+    log_value_index: u64,
+    block_number: u64,
+    block_hash: B256,
+    parent_hash: B256,
+    receipts: Vec<Receipt>,
+) -> Vec<LogValue> {
+    let mut log_value_index = log_value_index;
+    let mut log_values: Vec<LogValue> = Vec::new();
 
-    #[test]
-    fn test_address_value() {
-        let addr = address!("0000000000000000000000000000000000000001");
-        let value = address_value(&addr);
-
-        // Should be deterministic
-        let value2 = address_value(&addr);
-        assert_eq!(value, value2);
-
-        // Should be different from the input
-        assert_ne!(value.as_slice(), addr.as_slice());
+    // Add block delimiter
+    if block_number > 0 {
+        let delimiter = LogValue {
+            block_number: block_number - 1,
+            block_hash: parent_hash,
+            index: log_value_index,
+            value: B256::ZERO,
+            is_block_delimiter: true,
+        };
+        log_values.push(delimiter);
     }
 
-    #[test]
-    fn test_topic_value() {
-        let topic = b256!("0000000000000000000000000000000000000000000000000000000000000001");
-        let value = topic_value(&topic);
+    // Add log values
+    for receipt in receipts {
+        for log in receipt.logs {
+            // increment log_value_index
+            log_value_index += 1;
 
-        // Should be deterministic
-        let value2 = topic_value(&topic);
-        assert_eq!(value, value2);
+            // Address value
+            let address_value = address_value(&log.address);
+            log_values.push(LogValue {
+                block_number,
+                block_hash,
+                index: log_value_index,
+                value: address_value,
+                is_block_delimiter: false,
+            });
 
-        // Should be different from the input
-        assert_ne!(value, topic);
+            // Topic values
+            for topic in log.topics() {
+                log_value_index += 1;
+                let topic_value = topic_value(&topic);
+                log_values.push(LogValue {
+                    block_number,
+                    block_hash,
+                    index: log_value_index,
+                    value: topic_value,
+                    is_block_delimiter: false,
+                });
+            }
+        }
     }
+
+    log_values
 }

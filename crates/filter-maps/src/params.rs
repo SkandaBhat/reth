@@ -18,7 +18,7 @@ use crate::{constants::EXPECTED_MATCHES, types::FilterError, FilterRow};
 type PotentialMatches = Vec<u64>;
 
 /// `FilterMaps` parameters based on EIP-7745
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FilterMapParams {
     /// Log of map height (rows per map). Default: 16 (65,536 rows)
     pub log_map_height: u32,
@@ -299,8 +299,8 @@ mod tests {
             let mut rng = rng();
             let map_index = rng.random::<u32>();
 
-            let lv_index = ((map_index as u64) << params.log_values_per_map) +
-                rng.random_range(0..params.values_per_map());
+            let lv_index = ((map_index as u64) << params.log_values_per_map)
+                + rng.random_range(0..params.values_per_map());
 
             // Generate random hash
             let mut lv_hash_bytes = [0u8; 32];
