@@ -48,9 +48,7 @@
 
 mod accumulator;
 mod constants;
-mod matcher;
 mod params;
-mod provider;
 mod query;
 mod state;
 pub mod storage;
@@ -59,51 +57,9 @@ mod utils;
 
 pub use accumulator::FilterMapAccumulator;
 pub use constants::{DEFAULT_PARAMS, EXPECTED_MATCHES, MAX_LAYERS, RANGE_TEST_PARAMS};
-pub use matcher::Matcher;
 pub use params::FilterMapParams;
-pub use provider::FilterMapProvider;
-pub use query::{address_to_log_value, query_logs, topic_to_log_value, verify_log_matches_filter};
+pub use query::{query_logs, FilterMapsQueryProvider};
 pub use state::FilterMapAccumulatorState;
-pub use storage::{FilterMapRow, FilterMapsRange, FilterMapsReader, FilterMapsWriter};
-pub use types::{
-    FilterError, FilterMapMetadata, FilterResult, LogFilter, LogValue, MatcherResult,
-    PotentialMatches,
-};
+pub use storage::{FilterMapsBlockDelimiterEntry, FilterMapsReader, FilterMapsWriter};
+pub use types::{FilterError, FilterResult, LogValue, MatcherResult, PotentialMatches};
 pub use utils::{address_value, extract_log_values_from_block, topic_value};
-
-pub trait FilterMapExt {
-    // Convert a filter map to storage rows.
-    fn to_storage_rows(&self) -> Vec<(u32, FilterMapRow)>;
-}
-
-/// A full or partial in-memory representation of a filter map where rows are
-/// allowed to have a nil value meaning the row is not stored in the structure.
-/// Note that therefore a known empty row should be represented with a zero-
-/// length slice. It can be used as a memory cache or an overlay while preparing
-/// a batch of changes to the structure. In either case a nil value should be
-/// interpreted as transparent (uncached/unchanged).
-pub type FilterMap = Vec<FilterRow>;
-
-impl FilterMapExt for FilterMap {
-    fn to_storage_rows(&self) -> Vec<(u32, FilterMapRow)> {
-        self.iter()
-            .enumerate()
-            .filter_map(|(row_idx, columns)| {
-                if columns.is_empty() {
-                    None
-                } else {
-                    let cols_u64: Vec<u64> = columns.iter().map(|&c| c as u64).collect();
-                    Some((row_idx as u32, FilterMapRow::new(cols_u64)))
-                }
-            })
-            .collect()
-    }
-}
-
-/// `FilterRow` encodes a single row of a filter map as a list of column indices.
-/// Note that the values are always stored in the same order as they were added
-/// and if the same column index is added twice, it is also stored twice.
-/// Order of column indices and potential duplications do not matter when
-/// searching for a value but leaving the original order makes reverting to a
-/// previous state simpler.
-pub type FilterRow = Vec<u64>;

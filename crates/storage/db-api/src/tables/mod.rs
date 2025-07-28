@@ -29,7 +29,7 @@ use crate::{
 use alloy_consensus::Header;
 use alloy_primitives::{Address, BlockHash, BlockNumber, TxHash, TxNumber, B256};
 use reth_ethereum_primitives::{Receipt, TransactionSigned};
-use reth_filter_maps::storage::{FilterMapLastBlock, FilterMapsRange, StoredFilterMapRow};
+use reth_filter_maps::storage::{FilterMapRow, FilterMapsBlockDelimiterEntry};
 use reth_primitives_traits::{Account, Bytecode, StorageEntry};
 use reth_prune_types::{PruneCheckpoint, PruneSegment};
 use reth_stages_types::StageCheckpoint;
@@ -527,30 +527,46 @@ tables! {
 
     /// Stores filter map rows for EIP-7745 log indexing.
     /// The key is the map row index (see EIP-7745 for the indexing scheme).
-    table FilterMapRows {
-        type Key = u64;
-        type Value = StoredFilterMapRow;
+    table FilterMaps {
+        type Key = FilterMapRowKey;
+        type Value = FilterMapRow;
     }
 
-    /// Stores block number to log value pointer mapping.
+    /// Stores block number to log value index mapping.
     /// This allows finding where a block's logs start in the global sequence.
-    table BlockLvPointers {
+    table FilterMapsBlockIndex {
         type Key = BlockNumber;
-        type Value = u64;
+        type Value = FilterMapsBlockDelimiterEntry;
     }
+}
 
-    /// Stores the last block information for each filter map.
-    /// Key is the map index, value contains block info.
-    table FilterMapLastBlocks {
-        type Key = u32;
-        type Value = FilterMapLastBlock;
+/// Key for filter map rows
+#[derive(Ord, Clone, Eq, PartialOrd, PartialEq, Debug, Deserialize, Serialize, Hash)]
+pub struct FilterMapRowKey {
+    pub map_index: u32,
+    pub row_index: u32,
+}
+
+impl Encode for FilterMapRowKey {
+    type Encoded = [u8; 8];
+
+    fn encode(self) -> Self::Encoded {
+        let mut buf = [0u8; 8];
+        buf[0..4].copy_from_slice(&self.map_index.to_be_bytes());
+        buf[4..8].copy_from_slice(&self.row_index.to_be_bytes());
+        buf
     }
+}
 
-    /// Stores the overall filter maps range metadata.
-    /// Single entry table using u8 key with value 0.
-    table FilterMapsRangeTable {
-        type Key = u8;
-        type Value = FilterMapsRange;
+impl Decode for FilterMapRowKey {
+    fn decode(value: &[u8]) -> Result<Self, crate::DatabaseError> {
+        if value.len() != 8 {
+            return Err(crate::DatabaseError::Decode);
+        }
+        Ok(Self {
+            map_index: u32::from_be_bytes(value[0..4].try_into().unwrap()),
+            row_index: u32::from_be_bytes(value[4..8].try_into().unwrap()),
+        })
     }
 }
 

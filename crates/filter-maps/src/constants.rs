@@ -8,7 +8,7 @@ pub const EXPECTED_MATCHES: usize = 8;
 
 /// Maximum number of layers allowed in filter maps.
 /// This is a safety limit to prevent infinite loops in case of corrupted data.
-pub const MAX_LAYERS: u32 = 16;
+pub const MAX_LAYERS: u64 = 16;
 
 /// Default parameters used on mainnet
 pub const DEFAULT_PARAMS: FilterMapParams = FilterMapParams {

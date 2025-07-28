@@ -1,16 +1,32 @@
 //! Core types used by the `FilterMaps` implementation.
 
-use alloy_primitives::{Address, B256};
+use alloy_primitives::{BlockNumber, B256};
 
-#[derive(Debug, Clone)]
-pub struct LogValue {
-    pub block_number: u64,
+/// Metadata for a block delimiter in the log value sequence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlockDelimiter {
+    /// The parent block hash.
     pub block_hash: B256,
-    pub index: u64,
-    pub value: B256,
-    pub is_block_delimiter: bool,
+    /// The block number (previous block).
+    pub block_number: BlockNumber,
+    /// The parent block timestamp.
+    pub timestamp: u64,
 }
 
+/// Metadata for an actual log value (address or topic).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogValue {
+    /// The value hash (address or topic).
+    pub value: B256,
+    /// The transaction hash.
+    pub transaction_hash: B256,
+    /// The block number.
+    pub block_number: BlockNumber,
+    /// The transaction index in the block.
+    pub transaction_index: u64,
+    /// The log index within the transaction.
+    pub log_in_tx_index: u64,
+}
 /// Errors that can occur when using `FilterMaps`.
 #[derive(Debug, thiserror::Error)]
 pub enum FilterError {
@@ -29,7 +45,7 @@ pub enum FilterError {
 
     /// Insufficient layers in filter map row alternatives.
     #[error("insufficient filter map layers for map {0}")]
-    InsufficientLayers(u32),
+    InsufficientLayers(u64),
 
     /// Corrupted filter map data detected.
     #[error("corrupted filter map data: {0}")]
@@ -37,7 +53,7 @@ pub enum FilterError {
 
     /// Maximum layer limit exceeded.
     #[error("maximum layer limit ({0}) exceeded")]
-    MaxLayersExceeded(u32),
+    MaxLayersExceeded(u64),
 
     /// Invalid filter map parameters.
     #[error("invalid filter map parameters: {0}")]
@@ -76,50 +92,8 @@ pub type PotentialMatches = Option<Vec<u64>>;
 #[derive(Debug, Clone)]
 pub struct MatcherResult {
     /// The map index this result is for
-    pub map_index: u32,
+    pub map_index: u64,
     /// The potential matches found for this map
     /// None = wildcard (matches all), Some(vec) = specific matches
     pub matches: PotentialMatches,
-}
-
-/// Metadata for a completed filter map.
-#[derive(Debug, Clone, Default)]
-pub struct FilterMapMetadata {
-    /// Index of this map
-    pub map_index: u32,
-    /// First block that has logs in this map
-    pub first_block: u64,
-    /// Last block that has logs in this map
-    pub last_block: u64,
-    /// Hash of the last block
-    pub last_block_hash: B256,
-    /// Log value pointers for blocks starting in this map
-    pub block_lv_pointers: Vec<(u64, u64)>,
-}
-
-/// Filter criteria for log matching.
-#[derive(Debug, Clone, Default)]
-pub struct LogFilter {
-    /// Addresses to match (empty = match all addresses)
-    pub addresses: Vec<Address>,
-    /// Topics to match, where each position can have multiple options
-    /// (empty at any position = match all for that topic position)
-    pub topics: Vec<Vec<B256>>,
-}
-
-impl LogFilter {
-    /// Creates a new log filter with the given addresses and topics.
-    pub const fn new(addresses: Vec<Address>, topics: Vec<Vec<B256>>) -> Self {
-        Self { addresses, topics }
-    }
-
-    /// Returns true if this filter matches all logs (no constraints).
-    pub fn matches_all(&self) -> bool {
-        self.addresses.is_empty() && self.topics.is_empty()
-    }
-
-    /// Returns true if any position has at least one specific value to match.
-    pub fn has_constraints(&self) -> bool {
-        !self.addresses.is_empty() || self.topics.iter().any(|t| !t.is_empty())
-    }
 }

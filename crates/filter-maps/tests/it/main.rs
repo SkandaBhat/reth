@@ -2,6 +2,7 @@
 
 mod filtermaps;
 mod indexer;
+mod query;
 mod storage;
 mod utils;
 

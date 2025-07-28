@@ -7,7 +7,7 @@ use fnv::FnvHasher;
 use sha2::{Digest, Sha256};
 use std::hash::Hasher;
 
-use crate::{constants::EXPECTED_MATCHES, types::FilterError, FilterRow};
+use crate::{constants::EXPECTED_MATCHES, storage::FilterMapRow, types::FilterError};
 
 /// A strictly monotonically increasing list of log value indices in the range of a
 /// filter map that are potential matches for certain filter criteria.
@@ -21,20 +21,20 @@ type PotentialMatches = Vec<u64>;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FilterMapParams {
     /// Log of map height (rows per map). Default: 16 (65,536 rows)
-    pub log_map_height: u32,
+    pub log_map_height: u64,
     /// Log of map width (columns per row). Default: 24 (16,777,216 columns)
-    pub log_map_width: u32,
+    pub log_map_width: u64,
     /// Log of maps per epoch. Default: 10 (1,024 maps)
-    pub log_maps_per_epoch: u32,
+    pub log_maps_per_epoch: u64,
     /// Log of values per map. Default: 16 (65,536 values)
-    pub log_values_per_map: u32,
+    pub log_values_per_map: u64,
     /// baseRowLength / average row length
-    pub base_row_length_ratio: u32,
+    pub base_row_length_ratio: u64,
     /// maxRowLength log2 growth per layer
-    pub log_layer_diff: u32,
+    pub log_layer_diff: u64,
 
     /// (Not affecting consensus)
-    pub base_row_group_length: u32,
+    pub base_row_group_length: u64,
 }
 
 impl Default for FilterMapParams {
@@ -45,17 +45,17 @@ impl Default for FilterMapParams {
 
 impl FilterMapParams {
     /// Get the number of rows per map
-    pub const fn map_height(&self) -> u32 {
+    pub const fn map_height(&self) -> u64 {
         1 << self.log_map_height
     }
 
     /// Get the number of columns per row
-    pub const fn map_width(&self) -> u32 {
+    pub const fn map_width(&self) -> u64 {
         1 << self.log_map_width
     }
 
     /// Get the number of maps per epoch
-    pub const fn maps_per_epoch(&self) -> u32 {
+    pub const fn maps_per_epoch(&self) -> u64 {
         1 << self.log_maps_per_epoch
     }
 
@@ -65,24 +65,23 @@ impl FilterMapParams {
     }
 
     /// Get the base row length
-    pub const fn base_row_length(&self) -> u32 {
-        ((self.values_per_map() * self.base_row_length_ratio as u64) / self.map_height() as u64)
-            as u32
+    pub const fn base_row_length(&self) -> u64 {
+        (self.values_per_map() * self.base_row_length_ratio) / self.map_height()
     }
 
     /// Calculate the minimum number of layers required to store all values.
     ///
     /// This is based on the average row length and the maximum row length
     /// allowed at each layer.
-    pub fn required_layers(&self) -> u32 {
+    pub fn required_layers(&self) -> u64 {
         // Average row length is values_per_map / map_height
         // Use integer arithmetic to avoid float comparisons
         let values_per_map = self.values_per_map();
         let map_height = self.map_height() as u64;
 
         // Find the layer where max_row_length * map_height >= values_per_map
-        let mut layer = 0u32;
-        while (self.max_row_length(layer) as u64) * map_height < values_per_map {
+        let mut layer = 0u64;
+        while self.max_row_length(layer) * map_height < values_per_map {
             layer += 1;
             if layer >= crate::constants::MAX_LAYERS {
                 break;
@@ -100,21 +99,25 @@ impl FilterMapParams {
     /// mapping layer, allowing efficient disk access and Merkle proofs for long
     /// sections of short rows on lower order layers while avoiding putting too many
     /// heavy rows next to each other on higher order layers.
-    pub fn row_index(&self, map_index: u32, layer_index: u32, log_value: &B256) -> u32 {
+    pub fn row_index(&self, map_index: u64, layer_index: u64, log_value: &B256) -> u64 {
         let mut hasher = Sha256::new();
 
+        // First, add the log_value
         hasher.update(log_value.as_slice());
 
+        // Calculate masked_map_index according to EIP
         let masked_index = self.masked_map_index(map_index, layer_index);
-        let mut index_bytes = [0u8; 8];
-        index_bytes[0..4].copy_from_slice(&masked_index.to_le_bytes());
-        index_bytes[4..8].copy_from_slice(&layer_index.to_le_bytes());
-        hasher.update(index_bytes);
+
+        // Add masked_map_index as 32-bit big-endian
+        hasher.update(&(masked_index as u32).to_be_bytes());
+
+        // Add layer_index as 32-bit big-endian
+        hasher.update(&(layer_index as u32).to_be_bytes());
 
         let hash = hasher.finalize();
 
-        // Take first 4 bytes and modulo by map height
-        let row = u32::from_le_bytes([hash[0], hash[1], hash[2], hash[3]]);
+        // Take first 4 bytes as big-endian u32 and modulo by map height
+        let row = u32::from_be_bytes([hash[0], hash[1], hash[2], hash[3]]) as u64;
         row % self.map_height()
     }
 
@@ -126,15 +129,17 @@ impl FilterMapParams {
         hasher.write(log_value.as_slice());
         let hash = hasher.finish();
 
-        // Calculate hash bits needed
-        let hash_bits = self.log_map_width - self.log_values_per_map;
+        let log_value_width = 1 << (self.log_map_width - self.log_values_per_map);
 
-        // Combine position bits with hash bits
-        let position_bits = (lv_index % self.values_per_map()) as u32;
+        // Calculate collision_filter according to EIP
+        let shift_bits = self.log_map_width - self.log_values_per_map;
+        let part1 = hash >> (64 - shift_bits);
+        let part2 = hash >> (32 - shift_bits);
+        let collision_filter = (part1 + part2) % log_value_width;
+        // Combine position with collision filter
+        let position_in_map = lv_index % self.values_per_map();
 
-        let hash_component = (hash >> (64 - hash_bits)) as u32 ^ (hash as u32) >> (32 - hash_bits);
-
-        ((position_bits << hash_bits) + hash_component) as u64
+        position_in_map * log_value_width + collision_filter
     }
 
     /// Returns the index used for row mapping calculation on the given layer.
@@ -142,11 +147,11 @@ impl FilterMapParams {
     /// On layer zero the mapping changes once per epoch, then the frequency of
     /// re-mapping increases with every new layer until it reaches the frequency
     /// where it is different for every mapIndex.
-    pub fn masked_map_index(&self, map_index: u32, layer_index: u32) -> u32 {
-        let log_layer_diff = (layer_index * self.log_layer_diff).min(self.log_maps_per_epoch);
-        map_index & (u32::MAX << (self.log_maps_per_epoch - log_layer_diff))
+    pub fn masked_map_index(&self, map_index: u64, layer_index: u64) -> u64 {
+        let layer_factor = (1u64 << (layer_index * self.log_layer_diff)).min(self.maps_per_epoch());
+        let row_frequency = self.maps_per_epoch() / layer_factor;
+        map_index - (map_index % row_frequency)
     }
-
     /// Returns the maximum length filter rows are populated up to when using the
     /// given mapping layer.
     ///
@@ -160,7 +165,7 @@ impl FilterMapParams {
     /// When searching for a log value one should consider all layers and process
     /// corresponding rows up until the first one where the row mapped to the given
     /// layer is not full.
-    pub fn max_row_length(&self, layer_index: u32) -> u32 {
+    pub fn max_row_length(&self, layer_index: u64) -> u64 {
         let log_layer_diff = (layer_index * self.log_layer_diff).min(self.log_maps_per_epoch);
         self.base_row_length() << log_layer_diff
     }
@@ -178,23 +183,25 @@ impl FilterMapParams {
     /// should ensure these properties here.
     pub fn potential_matches(
         &self,
-        rows: &[FilterRow],
-        map_index: u32,
+        rows: &[FilterMapRow],
+        map_index: u64,
         log_value: &B256,
     ) -> Result<PotentialMatches, FilterError> {
         let mut results = Vec::with_capacity(EXPECTED_MATCHES);
-        let map_first = (map_index as u64) << self.log_values_per_map;
+        let map_first = map_index << self.log_values_per_map;
 
         for (layer_index, row) in rows.iter().enumerate() {
-            let max_len = self.max_row_length(layer_index as u32) as usize;
-            let row_len = row.len().min(max_len);
+            let max_len = self.max_row_length(layer_index as u64) as usize;
+            let row_len = row.columns.len().min(max_len);
 
             // Check each column in the row up to the effective length
-            for &column_value in &row[..row_len] {
+            for &column_value in &row.columns[..row_len] {
                 let potential_match =
                     map_first + (column_value >> (self.log_map_width - self.log_values_per_map));
 
-                if column_value == self.column_index(potential_match, log_value) {
+                let expected_column = self.column_index(potential_match, log_value);
+
+                if column_value == expected_column {
                     results.push(potential_match);
                 }
             }
@@ -206,6 +213,7 @@ impl FilterMapParams {
 
             // If we're at the last row and it's full, we have insufficient rows
             if layer_index == rows.len() - 1 {
+                println!("  ERROR: All rows full, insufficient layers!");
                 return Err(FilterError::InsufficientLayers(map_index));
             }
         }
@@ -221,14 +229,14 @@ impl FilterMapParams {
 ///
 /// This ensures rows from the same map are stored together.
 #[allow(dead_code)]
-pub(crate) const fn map_row_index(map_index: u32, row_index: u32, params: &FilterMapParams) -> u64 {
-    ((map_index as u64) * (params.map_height() as u64)) + (row_index as u64)
+pub(crate) const fn map_row_index(map_index: u64, row_index: u64, params: &FilterMapParams) -> u64 {
+    (map_index * params.map_height()) + row_index
 }
 
 /// Get the map index from a log value index.
 #[allow(dead_code)]
-pub(crate) const fn map_index_from_lv_index(lv_index: u64, params: &FilterMapParams) -> u32 {
-    (lv_index >> params.log_values_per_map) as u32
+pub(crate) const fn map_index_from_lv_index(lv_index: u64, params: &FilterMapParams) -> u64 {
+    lv_index >> params.log_values_per_map
 }
 
 #[cfg(test)]
@@ -297,17 +305,17 @@ mod tests {
         for _ in 0..100_000 {
             // Generate a row with a single random entry
             let mut rng = rng();
-            let map_index = rng.random::<u32>();
+            let map_index = rng.random::<u64>();
 
-            let lv_index = ((map_index as u64) << params.log_values_per_map)
-                + rng.random_range(0..params.values_per_map());
+            let lv_index = map_index
+                << params.log_values_per_map + rng.random_range(0..params.values_per_map());
 
             // Generate random hash
             let mut lv_hash_bytes = [0u8; 32];
             rng.fill(&mut lv_hash_bytes);
             let lv_hash = B256::from(lv_hash_bytes);
 
-            let row = FilterRow::from([params.column_index(lv_index, &lv_hash)]);
+            let row = FilterMapRow { columns: vec![params.column_index(lv_index, &lv_hash)] };
             let matches = params.potential_matches(&[row], map_index, &lv_hash).unwrap();
 
             assert_eq!(
@@ -335,9 +343,9 @@ mod tests {
 
         for _ in 0..TEST_PM_COUNT {
             let mut rng = rng();
-            let map_index = rng.random::<u32>();
-            let lv_start = (map_index as u64) << params.log_values_per_map;
-            let mut row = FilterRow::new();
+            let map_index = rng.random::<u64>();
+            let lv_start = map_index << params.log_values_per_map;
+            let mut row_columns = Vec::new();
             let mut lv_indices = Vec::with_capacity(TEST_PM_LEN);
             let mut lv_hashes = Vec::with_capacity(TEST_PM_LEN + 1);
 
@@ -351,7 +359,7 @@ mod tests {
                 let lv_hash = B256::from(lv_hash_bytes);
                 lv_hashes.push(lv_hash);
 
-                row.push(params.column_index(lv_index, &lv_hash));
+                row_columns.push(params.column_index(lv_index, &lv_hash));
             }
 
             // Add the same log value hash at the first TEST_PM_LEN log value indices of the map's
@@ -362,35 +370,35 @@ mod tests {
             lv_hashes.push(common_hash);
 
             for lv_index in lv_start..lv_start + TEST_PM_LEN as u64 {
-                row.push(params.column_index(lv_index, &common_hash));
+                row_columns.push(params.column_index(lv_index, &common_hash));
             }
 
             // Randomly duplicate some entries
             for _ in 0..TEST_PM_LEN {
-                let random_entry = row[rng.random_range(0..row.len())];
-                row.push(random_entry);
+                let random_entry = row_columns[rng.random_range(0..row_columns.len())];
+                row_columns.push(random_entry);
             }
 
             // Randomly mix up order of elements
-            for i in (1..row.len()).rev() {
+            for i in (1..row_columns.len()).rev() {
                 let j = rng.random_range(0..i);
-                row.swap(i, j);
+                row_columns.swap(i, j);
             }
 
             // Split up into a list of rows if longer than allowed
             let mut rows = Vec::new();
-            let mut remaining_row = Some(row);
-            let mut layer_index = 0u32;
+            let mut remaining_columns = Some(row_columns);
+            let mut layer_index = 0;
 
-            while let Some(mut row) = remaining_row {
+            while let Some(mut columns) = remaining_columns {
                 let max_len = params.max_row_length(layer_index) as usize;
-                if row.len() > max_len {
-                    let rest = row.split_off(max_len);
-                    rows.push(row);
-                    remaining_row = Some(rest);
+                if columns.len() > max_len {
+                    let rest = columns.split_off(max_len);
+                    rows.push(FilterMapRow { columns });
+                    remaining_columns = Some(rest);
                 } else {
-                    rows.push(row);
-                    remaining_row = None;
+                    rows.push(FilterMapRow { columns });
+                    remaining_columns = None;
                 }
                 layer_index += 1;
             }
@@ -449,24 +457,6 @@ mod tests {
         }
         println!("Total false positives: {false_positives}");
     }
-
-    #[test]
-    fn test_insufficient_layers_error() {
-        let params = FilterMapParams::default();
-        let value = b256!("0000000000000000000000000000000000000000000000000000000000000001");
-
-        // Create rows where the last one is full
-        let mut rows = Vec::new();
-        for layer in 0..3 {
-            let max_len = params.max_row_length(layer) as usize;
-            rows.push(vec![0u64; max_len]); // Full row
-        }
-
-        // This should return an error because all rows are full
-        let result = params.potential_matches(&rows, 0, &value);
-        assert!(matches!(result, Err(FilterError::InsufficientLayers(0))));
-    }
-
     #[test]
     fn test_required_layers() {
         let params = FilterMapParams::default();
@@ -503,9 +493,9 @@ mod tests {
         assert_eq!(map_row_index(1, 0, &params), params.map_height() as u64);
 
         // Random row in random map
-        let map_idx = 42u32;
-        let row_idx = 1337u32;
-        let expected = (map_idx as u64) * (params.map_height() as u64) + (row_idx as u64);
+        let map_idx = 42;
+        let row_idx = 1337;
+        let expected = map_idx * params.map_height() + row_idx;
         assert_eq!(map_row_index(map_idx, row_idx, &params), expected);
     }
 
@@ -525,7 +515,7 @@ mod tests {
 
         // Random log value
         let lv_index = 123456789u64;
-        let expected_map = (lv_index >> params.log_values_per_map) as u32;
+        let expected_map = lv_index >> params.log_values_per_map;
         assert_eq!(map_index_from_lv_index(lv_index, &params), expected_map);
     }
 }

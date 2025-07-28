@@ -2,15 +2,13 @@
 //! creates a filter map and verifies that the filter map can be used to query the
 //! blocks and verify that the filter map is correct.
 
-use alloy_primitives::{BlockNumber, B256};
-use alloy_rpc_types_eth::BlockHashOrNumber;
-use reth_provider::test_utils::MockEthProvider;
-use reth_provider::ReceiptProvider;
-use std::sync::Arc;
+use alloy_primitives::{BlockNumber, Log, B256};
+use reth_provider::{test_utils::MockEthProvider, ReceiptProvider};
+use std::{str::FromStr, sync::Arc};
 
 use crate::indexer::index;
 use crate::storage::InMemoryFilterMapsProvider;
-use crate::utils::{create_test_provider_with_random_blocks_and_receipts, get_random_log};
+use crate::utils::create_test_provider_with_random_blocks_and_receipts;
 use reth_filter_maps::query_logs;
 
 const START_BLOCK: BlockNumber = 0;
@@ -40,66 +38,38 @@ async fn test_filter_map() {
     let result = index(provider.clone(), range.clone(), storage.clone()).await;
     assert!(result.is_ok());
 
-    // Count total logs
-    let mut total_logs = 0;
-    for block_num in range.clone() {
-        let receipts = provider
-            .receipts_by_block(BlockHashOrNumber::Number(block_num))
-            .unwrap_or_default()
-            .unwrap_or_default();
-        for receipt in receipts {
-            total_logs += receipt.logs.len();
-        }
-    }
-    println!("Total logs indexed: {}", total_logs);
-    // do an iterative loop of 2000 times
-    for i in 0..20000 {
-        let (log, log_block_number) =
-            get_random_log(provider.clone(), START_BLOCK, BLOCKS_COUNT).await;
+    // get all the logs from the provider
+    let receipts = provider.receipts_by_block_range(range.clone()).unwrap_or_default();
+    let logs: Vec<Log> = receipts
+        .iter()
+        .flat_map(|receipt| receipt.iter().flat_map(|r| r.logs.iter()))
+        .cloned()
+        .collect();
 
-        let addresses = vec![log.address];
+    println!("logs: {:?}", logs.len());
 
-        let topics: Vec<Vec<B256>> = log.topics().iter().map(|&topic| vec![topic]).collect();
+    // find all the logs in the filter map
+    for log in logs.iter() {
+        let address = log.address.clone();
 
-        // search in a range around the logs block number, but clamp to indexed range
-        let from_block = log_block_number.saturating_sub(100).max(START_BLOCK);
-        let to_block =
-            log_block_number.saturating_add(100).min(START_BLOCK + BLOCKS_COUNT as u64 - 1);
+        let topics: Vec<B256> = log.topics().iter().map(|&topic| topic).collect();
 
-        println!("searching for log with address {:?} at block {}", log.address, log_block_number);
+        let logs_result = query_logs(storage.clone(), range.clone(), address, topics.clone());
 
-        let logs_result =
-            query_logs(storage.clone(), from_block, to_block, addresses.clone(), topics.clone());
+        assert!(logs_result.is_ok());
 
-        let logs = match logs_result {
-            Ok(logs) => logs,
-            Err(e) => {
-                println!("Query failed for log at block {}: {:?}", log_block_number, e);
-                continue;
-            }
-        };
-
-        println!("found {} logs", logs.len());
-
-        // Filter out false positives
-        // let filtered_logs: Vec<_> = logs
-        //     .into_iter()
-        //     .filter(|l| reth_filter_maps::verify_log_matches_filter(l, &addresses, &topics))
-        //     .collect();
-
-        // Should find at least the original log
+        let logs = logs_result.unwrap();
 
         assert!(
             !logs.is_empty(),
-            "Should find at least one matching log, expected log address: {:?}, iteration: {}",
+            "Should find at least one matching log, expected log address: {:?}, topics: {:?}",
             log.address,
-            i
+            topics.len()
         );
 
         for l in logs {
-            println!("found log with address {:?}", l.address);
-            assert_eq!(l.address, log.address);
-            assert_eq!(l.topics(), log.topics());
+            assert_eq!(l.address, log.address, "log address mismatch");
+            assert_eq!(l.topics(), log.topics(), "log topics mismatch");
         }
     }
 }

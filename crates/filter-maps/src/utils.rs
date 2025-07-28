@@ -1,8 +1,9 @@
 use alloy_primitives::{Address, B256};
-use reth_ethereum_primitives::Receipt;
+use reth_ethereum_primitives::{Block, Receipt};
 use sha2::{Digest, Sha256};
+use std::str::FromStr;
 
-use crate::types::LogValue;
+use crate::types::{BlockDelimiter, LogValue};
 
 /// Compute the log value hash of a log emitting address.
 pub fn address_value(address: &Address) -> B256 {
@@ -18,58 +19,61 @@ pub fn topic_value(topic: &B256) -> B256 {
     B256::from_slice(&hasher.finalize())
 }
 
+/// Extracts log values from a block.
+///
+/// This function extracts log values from a block and returns them as a vector of `LogValue`s.
+///
+/// # Arguments
+///
 pub fn extract_log_values_from_block(
-    log_value_index: u64,
-    block_number: u64,
-    block_hash: B256,
-    parent_hash: B256,
+    block: Block,
     receipts: Vec<Receipt>,
-) -> Vec<LogValue> {
-    let mut log_value_index = log_value_index;
+) -> (Option<BlockDelimiter>, Vec<LogValue>) {
     let mut log_values: Vec<LogValue> = Vec::new();
+    let block_number = block.number;
+    let parent_hash = block.parent_hash;
+    let parent_timestamp = block.timestamp;
+    let transactions = block.body.transactions();
 
     // Add block delimiter
-    if block_number > 0 {
-        let delimiter = LogValue {
+    let delimiter = if block_number > 0 {
+        let delimiter = BlockDelimiter {
             block_number: block_number - 1,
             block_hash: parent_hash,
-            index: log_value_index,
-            value: B256::ZERO,
-            is_block_delimiter: true,
+            timestamp: parent_timestamp,
         };
-        log_values.push(delimiter);
-    }
+        Some(delimiter)
+    } else {
+        None
+    };
 
     // Add log values
-    for receipt in receipts {
-        for log in receipt.logs {
-            // increment log_value_index
-            log_value_index += 1;
-
+    for (tx_index, (receipt, transaction)) in receipts.iter().zip(transactions).enumerate() {
+        let transaction_hash = *transaction.tx_hash();
+        for (log_index, log) in receipt.logs.iter().enumerate() {
             // Address value
             let address_value = address_value(&log.address);
             log_values.push(LogValue {
-                block_number,
-                block_hash,
-                index: log_value_index,
                 value: address_value,
-                is_block_delimiter: false,
+                transaction_hash,
+                block_number,
+                transaction_index: tx_index as u64,
+                log_in_tx_index: log_index as u64,
             });
 
             // Topic values
             for topic in log.topics() {
-                log_value_index += 1;
                 let topic_value = topic_value(&topic);
                 log_values.push(LogValue {
-                    block_number,
-                    block_hash,
-                    index: log_value_index,
                     value: topic_value,
-                    is_block_delimiter: false,
+                    transaction_hash,
+                    block_number,
+                    transaction_index: tx_index as u64,
+                    log_in_tx_index: log_index as u64,
                 });
             }
         }
     }
 
-    log_values
+    (delimiter, log_values)
 }
