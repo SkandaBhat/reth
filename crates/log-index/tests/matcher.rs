@@ -3,7 +3,7 @@
 #![cfg(feature = "test-utils")]
 
 use alloy_primitives::{address, B256};
-use reth_filter_maps::{
+use reth_log_index::{
     address_value, test_utils::SimpleProvider, topic_value, FilterMapProvider, Matcher,
 };
 use std::sync::Arc;

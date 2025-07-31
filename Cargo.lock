@@ -7592,7 +7592,7 @@ dependencies = [
  "reth-codecs",
  "reth-db-models",
  "reth-ethereum-primitives",
- "reth-filter-maps",
+ "reth-log-index",
  "reth-optimism-primitives",
  "reth-primitives-traits",
  "reth-prune-types",
@@ -8538,31 +8538,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "reth-filter-maps"
-version = "1.5.0"
-dependencies = [
- "alloy-consensus",
- "alloy-primitives",
- "alloy-rpc-types-eth",
- "bytes",
- "fnv",
- "modular-bitfield",
- "rand 0.9.1",
- "reth-codecs",
- "reth-errors",
- "reth-ethereum-primitives",
- "reth-provider",
- "reth-storage-api",
- "reth-storage-errors",
- "reth-testing-utils",
- "serde",
- "sha2 0.10.9",
- "test-fuzz",
- "thiserror 2.0.12",
- "tokio",
-]
-
-[[package]]
 name = "reth-fs-util"
 version = "1.5.0"
 dependencies = [
@@ -8637,6 +8612,31 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.12",
  "tracing",
+]
+
+[[package]]
+name = "reth-log-index"
+version = "1.5.0"
+dependencies = [
+ "alloy-consensus",
+ "alloy-primitives",
+ "alloy-rpc-types-eth",
+ "bytes",
+ "fnv",
+ "modular-bitfield",
+ "rand 0.9.1",
+ "reth-codecs",
+ "reth-errors",
+ "reth-ethereum-primitives",
+ "reth-provider",
+ "reth-storage-api",
+ "reth-storage-errors",
+ "reth-testing-utils",
+ "serde",
+ "sha2 0.10.9",
+ "test-fuzz",
+ "thiserror 2.0.12",
+ "tokio",
 ]
 
 [[package]]
@@ -10190,8 +10190,8 @@ dependencies = [
  "reth-execution-errors",
  "reth-execution-types",
  "reth-exex",
- "reth-filter-maps",
  "reth-fs-util",
+ "reth-log-index",
  "reth-network-p2p",
  "reth-network-peers",
  "reth-primitives-traits",
@@ -10335,7 +10335,7 @@ dependencies = [
  "reth-db-models",
  "reth-ethereum-primitives",
  "reth-execution-types",
- "reth-filter-maps",
+ "reth-log-index",
  "reth-primitives-traits",
  "reth-prune-types",
  "reth-stages-types",

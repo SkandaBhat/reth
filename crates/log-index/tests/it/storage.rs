@@ -1,11 +1,11 @@
 // Test implementation of FilterMapsReader and FilterMapsWriter traits
 
 use alloy_primitives::BlockNumber;
-use reth_filter_maps::storage::{
+use reth_log_index::storage::{
     FilterMapRow, FilterMapRowEntry, FilterMapsBlockDelimiterEntry, FilterMapsReader,
     FilterMapsWriter, MapIndex, RowIndex,
 };
-use reth_filter_maps::{FilterMapParams, FilterResult};
+use reth_log_index::{FilterMapParams, FilterResult};
 use reth_provider::test_utils::MockEthProvider;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};

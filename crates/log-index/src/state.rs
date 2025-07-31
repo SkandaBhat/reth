@@ -3,7 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use alloy_primitives::B256;
 
 use crate::{
-    accumulator::{FilterMap, FilterMapAccumulator},
+    filter_maps::{FilterMap, FilterMapAccumulator},
     FilterMapParams,
 };
 

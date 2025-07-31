@@ -2,7 +2,7 @@
 //!
 //! This stage builds filter maps from executed blocks to enable efficient log querying.
 
-use reth_filter_maps::FilterMapParams;
+use reth_log_index::FilterMapParams;
 use reth_provider::DBProvider;
 use reth_stages_api::{
     ExecInput, ExecOutput, Stage, StageCheckpoint, StageError, StageId, UnwindInput, UnwindOutput,

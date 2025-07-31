@@ -1,12 +1,12 @@
 [package]
-name = "reth-filter-maps"
+name = "reth-log-index"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 homepage.workspace = true
 repository.workspace = true
-description = "Filter maps implementation for efficient log indexing (EIP-7745)"
+description = "Log index implementation for efficient log indexing"
 
 [lints]
 workspace = true

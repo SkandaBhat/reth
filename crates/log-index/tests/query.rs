@@ -4,7 +4,7 @@
 
 use alloy_primitives::{address, bytes, LogData, B256};
 use alloy_rpc_types_eth::Log;
-use reth_filter_maps::{
+use reth_log_index::{
     address_value, query_logs, test_utils::MockFilterMapProvider, topic_value, FilterError,
 };
 use std::sync::Arc;

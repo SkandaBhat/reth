@@ -3,16 +3,17 @@
 //! blocks and verify that the filter map is correct.
 
 use alloy_primitives::{BlockNumber, Log, B256};
+use rand::seq::SliceRandom;
 use reth_provider::{test_utils::MockEthProvider, ReceiptProvider};
-use std::{str::FromStr, sync::Arc};
+use std::sync::Arc;
 
 use crate::indexer::index;
 use crate::storage::InMemoryFilterMapsProvider;
 use crate::utils::create_test_provider_with_random_blocks_and_receipts;
-use reth_filter_maps::query_logs;
+use reth_log_index::query_logs;
 
 const START_BLOCK: BlockNumber = 0;
-const BLOCKS_COUNT: usize = 1000;
+const BLOCKS_COUNT: usize = 10000;
 const TX_COUNT: u8 = 10;
 const LOG_COUNT: u8 = 10;
 const MAX_TOPICS: usize = 4;
@@ -48,17 +49,26 @@ async fn test_filter_map() {
 
     println!("logs: {:?}", logs.len());
 
+    // shuffle the logs
+    let mut rng = rand::rng();
+    let mut logs = logs.clone();
+    logs.shuffle(&mut rng);
+
     // find all the logs in the filter map
     for log in logs.iter() {
         let address = log.address.clone();
 
         let topics: Vec<B256> = log.topics().iter().map(|&topic| topic).collect();
 
+        println!("searching for log: {:?}", log);
+
         let logs_result = query_logs(storage.clone(), range.clone(), address, topics.clone());
 
         assert!(logs_result.is_ok());
 
         let logs = logs_result.unwrap();
+
+        println!("got logs: {:?}", logs);
 
         assert!(
             !logs.is_empty(),
@@ -68,6 +78,7 @@ async fn test_filter_map() {
         );
 
         for l in logs {
+            println!("log: {:?}", l);
             assert_eq!(l.address, log.address, "log address mismatch");
             assert_eq!(l.topics(), log.topics(), "log topics mismatch");
         }

@@ -7,7 +7,11 @@ use fnv::FnvHasher;
 use sha2::{Digest, Sha256};
 use std::hash::Hasher;
 
-use crate::{constants::EXPECTED_MATCHES, storage::FilterMapRow, types::FilterError};
+use crate::{
+    constants::{DEFAULT_PARAMS, EXPECTED_MATCHES},
+    storage::FilterMapRow,
+    types::FilterError,
+};
 
 /// A strictly monotonically increasing list of log value indices in the range of a
 /// filter map that are potential matches for certain filter criteria.
@@ -39,7 +43,7 @@ pub struct FilterMapParams {
 
 impl Default for FilterMapParams {
     fn default() -> Self {
-        super::constants::DEFAULT_PARAMS
+        DEFAULT_PARAMS
     }
 }
 
@@ -125,7 +129,7 @@ impl FilterMapParams {
     /// position should be marked.
     pub fn column_index(&self, lv_index: u64, log_value: &B256) -> u64 {
         let mut hasher = FnvHasher::default();
-        hasher.write(&lv_index.to_le_bytes());
+        hasher.write(&lv_index.to_be_bytes());
         hasher.write(log_value.as_slice());
         let hash = hasher.finish();
 

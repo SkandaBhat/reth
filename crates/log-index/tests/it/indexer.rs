@@ -1,7 +1,7 @@
 use crate::storage::InMemoryFilterMapsProvider;
 use alloy_primitives::BlockNumber;
 use reth_ethereum_primitives::Receipt;
-use reth_filter_maps::{
+use reth_log_index::{
     extract_log_values_from_block, FilterMapAccumulator, FilterMapParams, FilterMapsReader,
     FilterMapsWriter, FilterResult,
 };

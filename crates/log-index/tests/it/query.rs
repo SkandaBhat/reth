@@ -1,6 +1,6 @@
 use alloy_primitives::Log;
 use alloy_rpc_types_eth::BlockHashOrNumber;
-use reth_filter_maps::FilterMapsQueryProvider;
+use reth_log_index::FilterMapsQueryProvider;
 use reth_provider::ReceiptProvider;
 
 use crate::storage::InMemoryFilterMapsProvider;

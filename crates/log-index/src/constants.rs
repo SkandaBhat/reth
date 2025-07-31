@@ -1,6 +1,6 @@
 //! Constants for `FilterMaps` parameters
 
-use super::params::FilterMapParams;
+use crate::filter_maps::FilterMapParams;
 
 /// Expected number of potential matches in typical queries.
 /// Used as initial capacity to reduce allocations.

@@ -1,12 +1,12 @@
-//! Filter maps implementation for efficient log indexing (EIP-7745).
+//! Log index implementation for efficient log indexing.
 //!
-//! This crate provides the core implementation of filter maps as specified in EIP-7745,
+//! This crate provides the core implementation of log index,
 //! which enables efficient querying of Ethereum logs without relying on bloom filters.
 //!
 //! ## Overview
 //!
-//! Filter maps are two-dimensional sparse bit maps that index log values (addresses and topics)
-//! for efficient searching. They provide:
+//! Log index is a two-dimensional sparse bit maps that index log values (addresses and topics)
+//! for efficient searching. It provides:
 //!
 //! - Constant-time lookups for log queries
 //! - Better storage efficiency compared to bloom filters
@@ -16,12 +16,12 @@
 //! ## Usage
 //!
 //! ```rust
-//! use reth_filter_maps::{FilterMapAccumulator, FilterMapParams, extract_log_values_from_block};
-//! use reth_filter_maps::storage::{FilterMapsReader, FilterMapsWriter};
+//! use reth_log_index::{LogIndexAccumulator, LogIndexParams, extract_log_values_from_block};
+//! use reth_log_index::storage::{LogIndexReader, LogIndexWriter};
 //!
 //! // Create an accumulator
-//! let params = FilterMapParams::default();
-//! let mut accumulator = FilterMapAccumulator::new(params, map_index);
+//! let params = LogIndexParams::default();
+//! let mut accumulator = LogIndexAccumulator::new(params, map_index);
 //!
 //! // Extract log values from block
 //! let log_values = extract_log_values_from_block(
@@ -46,18 +46,16 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
-mod accumulator;
 mod constants;
-mod params;
+mod filter_maps;
 mod query;
 mod state;
 pub mod storage;
 mod types;
 mod utils;
 
-pub use accumulator::FilterMapAccumulator;
 pub use constants::{DEFAULT_PARAMS, EXPECTED_MATCHES, MAX_LAYERS, RANGE_TEST_PARAMS};
-pub use params::FilterMapParams;
+pub use filter_maps::{FilterMapAccumulator, FilterMapParams};
 pub use query::{query_logs, FilterMapsQueryProvider};
 pub use state::FilterMapAccumulatorState;
 pub use storage::{FilterMapsBlockDelimiterEntry, FilterMapsReader, FilterMapsWriter};
