@@ -1,14 +1,13 @@
 use std::collections::{HashMap, VecDeque};
 
-use alloy_primitives::{Address, BlockNumber, B256};
+use alloy_primitives::B256;
 
-use crate::utils::address_value;
 use crate::{
     storage::{FilterMapRow, FilterMapsBlockDelimiterEntry, RowIndex},
     types::BlockDelimiter,
     FilterError, FilterMapParams, FilterResult, MAX_LAYERS,
 };
-use std::{mem, str::FromStr};
+use std::mem;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FilterMap {

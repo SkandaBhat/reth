@@ -49,7 +49,6 @@
 mod constants;
 mod filter_maps;
 mod query;
-mod state;
 pub mod storage;
 mod types;
 mod utils;
@@ -57,7 +56,6 @@ mod utils;
 pub use constants::{DEFAULT_PARAMS, EXPECTED_MATCHES, MAX_LAYERS, RANGE_TEST_PARAMS};
 pub use filter_maps::{FilterMapAccumulator, FilterMapParams};
 pub use query::{query_logs, FilterMapsQueryProvider};
-pub use state::FilterMapAccumulatorState;
 pub use storage::{FilterMapsBlockDelimiterEntry, FilterMapsReader, FilterMapsWriter};
 pub use types::{FilterError, FilterResult, LogValue, MatcherResult, PotentialMatches};
 pub use utils::{address_value, extract_log_values_from_block, topic_value};
