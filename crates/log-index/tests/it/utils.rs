@@ -18,7 +18,7 @@ pub(crate) async fn create_test_provider_with_random_blocks_and_receipts(
 
     let provider = MockEthProvider::default();
 
-    let mut blocks = random_block_range(
+    let blocks = random_block_range(
         &mut rng,
         start_block..=start_block + blocks_count as u64 - 1,
         BlockRangeParams { tx_count: 0..tx_count, ..Default::default() },

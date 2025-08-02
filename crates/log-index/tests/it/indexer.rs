@@ -20,9 +20,8 @@ fn persist(
         let completed_map_clone = completed_map.clone();
         println!("storing filter map: {:?}", completed_map.index);
         // store filter map rows
-        let rows =
-            completed_map.rows.iter().map(|(row_index, row)| (*row_index, row.clone())).collect();
-        storage.store_filter_map_rows(completed_map.index, rows)?;
+
+        storage.store_filter_map_rows(completed_map.rows)?;
 
         // store block log value indices
         for (block_number, log_value_index) in completed_map.block_log_value_indices {

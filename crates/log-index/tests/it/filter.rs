@@ -43,6 +43,7 @@ pub async fn get_logs_in_block_range(
     filter: Filter,
     from_block: u64,
     to_block: u64,
+    force_bloom: bool,
 ) -> FilterResult<Vec<Log>> {
     let address: Address = *filter.address.to_value_or_array().unwrap().as_value().unwrap();
     let topics: Vec<B256> = filter
@@ -50,6 +51,10 @@ pub async fn get_logs_in_block_range(
         .iter()
         .map(|topic| *topic.to_value_or_array().unwrap().as_value().unwrap())
         .collect();
+
+    if force_bloom {
+        return get_logs_in_block_range_bloom(provider, &filter, from_block, to_block).await;
+    }
 
     let metadata = provider.get_metadata()?.unwrap();
 

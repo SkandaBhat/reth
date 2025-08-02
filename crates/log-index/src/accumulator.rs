@@ -1,12 +1,9 @@
-use std::collections::{HashMap, VecDeque};
-
-use alloy_primitives::{BlockNumber, B256};
+use alloy_primitives::{map::HashMap, BlockNumber, B256};
+use std::collections::VecDeque;
 
 use crate::{
     params::FilterMapParams,
-    types::{
-        BlockDelimiter, FilterError, FilterMapRow, FilterResult, LogValue, MapRowIndex, RowIndex,
-    },
+    types::{BlockDelimiter, FilterError, FilterMapRow, FilterResult, LogValue, MapRowIndex},
     MAX_LAYERS,
 };
 use std::mem;
@@ -22,7 +19,7 @@ use std::mem;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FilterMap {
     /// The rows of the filter map.
-    pub rows: HashMap<RowIndex, FilterMapRow>,
+    pub rows: HashMap<MapRowIndex, FilterMapRow>,
     /// The block number and log value index for each block.
     pub block_log_value_indices: HashMap<BlockNumber, u64>, // block number -> log value index
     /// The index of the filter map.
@@ -31,14 +28,14 @@ pub struct FilterMap {
 
 impl Default for FilterMap {
     fn default() -> Self {
-        Self { rows: HashMap::new(), block_log_value_indices: HashMap::new(), index: 0 }
+        Self { rows: HashMap::default(), block_log_value_indices: HashMap::default(), index: 0 }
     }
 }
 
 impl FilterMap {
     /// Creates a new filter map.
     pub fn new(index: u64) -> Self {
-        Self { rows: HashMap::new(), block_log_value_indices: HashMap::new(), index }
+        Self { rows: HashMap::default(), block_log_value_indices: HashMap::default(), index }
     }
 }
 
@@ -64,7 +61,7 @@ impl FilterMapAccumulator {
     pub fn new(params: FilterMapParams, map_index: u64, log_value_index: u64) -> Self {
         let mut row_fill_levels = Vec::with_capacity(MAX_LAYERS as usize);
         for _ in 0..MAX_LAYERS {
-            row_fill_levels.push(HashMap::new());
+            row_fill_levels.push(HashMap::default());
         }
 
         Self {
@@ -72,7 +69,7 @@ impl FilterMapAccumulator {
             current_map: FilterMap::new(map_index),
             log_value_index,
             row_fill_levels,
-            row_cache: HashMap::new(),
+            row_cache: HashMap::default(),
             completed_maps: VecDeque::new(),
         }
     }
@@ -121,7 +118,10 @@ impl FilterMapAccumulator {
 
                 let col_idx = self.params.column_index(self.log_value_index, &value);
 
-                self.current_map.rows.entry(row_idx).or_default().columns.push(col_idx);
+                let global_row_index =
+                    self.params.global_row_index(self.current_map.index, row_idx);
+
+                self.current_map.rows.entry(global_row_index).or_default().columns.push(col_idx);
                 self.row_fill_levels[layer as usize].insert(row_idx, current_len + 1);
                 // increment log value index
                 self.log_value_index += 1;

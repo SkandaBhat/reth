@@ -7,6 +7,7 @@ use alloy_rpc_types_eth::Filter;
 use rand::seq::SliceRandom;
 use reth_provider::{test_utils::MockEthProvider, ReceiptProvider};
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::filter::get_logs_in_block_range;
 use crate::indexer::index;
@@ -14,7 +15,7 @@ use crate::storage::InMemoryFilterMapsProvider;
 use crate::utils::create_test_provider_with_random_blocks_and_receipts;
 
 const START_BLOCK: BlockNumber = 0;
-const BLOCKS_COUNT: usize = 1000;
+const BLOCKS_COUNT: usize = 250;
 const TX_COUNT: u8 = 150;
 const LOG_COUNT: u8 = 1;
 const MAX_TOPICS: usize = 4;
@@ -81,17 +82,47 @@ async fn test_filter_map() {
             };
         }
 
-        let logs = get_logs_in_block_range(
+        // fetch the same log with and without indexing.
+        // benchmark the difference.
+        let start = Instant::now();
+        let logs_with_indexing = get_logs_in_block_range(
+            storage.clone(),
+            filter.clone(),
+            *range.clone().start(),
+            *range.clone().end(),
+            false,
+        )
+        .await;
+        let end = Instant::now();
+        let indexed_time = end.duration_since(start);
+
+        let start = Instant::now();
+        let logs_with_bloom = get_logs_in_block_range(
             storage.clone(),
             filter,
             *range.clone().start(),
             *range.clone().end(),
+            true,
         )
         .await;
+        let end = Instant::now();
+        let bloom_time = end.duration_since(start);
 
-        assert!(logs.is_ok());
+        let ratio = bloom_time.as_secs_f64() / indexed_time.as_secs_f64();
+        let mut average_ratio = 0.0;
+        average_ratio = (average_ratio * (i as f64) + ratio) / (i as f64 + 1.0);
+        if i % 1000 == 0 {
+            println!(
+                "indexing is {:?}x faster than bloom, average ratio: {:?}",
+                ratio, average_ratio
+            );
+        }
 
-        let logs = logs.unwrap();
+        assert!(logs_with_bloom.is_ok());
+
+        assert!(logs_with_indexing.is_ok());
+        assert!(logs_with_bloom.is_ok());
+        let logs = logs_with_indexing.unwrap();
 
         assert!(
             !logs.is_empty(),

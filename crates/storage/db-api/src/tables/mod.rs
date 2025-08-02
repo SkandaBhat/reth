@@ -29,7 +29,7 @@ use crate::{
 use alloy_consensus::Header;
 use alloy_primitives::{Address, BlockHash, BlockNumber, TxHash, TxNumber, B256};
 use reth_ethereum_primitives::{Receipt, TransactionSigned};
-use reth_log_index::FilterMapRow;
+use reth_log_index::{FilterMapMetadata, FilterMapRow};
 use reth_primitives_traits::{Account, Bytecode, StorageEntry};
 use reth_prune_types::{PruneCheckpoint, PruneSegment};
 use reth_stages_types::StageCheckpoint;
@@ -525,48 +525,22 @@ tables! {
         type Value = BlockNumber;
     }
 
-    /// Stores filter map rows for EIP-7745 log indexing.
-    /// The key is the map row index (see EIP-7745 for the indexing scheme).
-    table FilterMaps {
-        type Key = FilterMapRowKey;
+    /// Stores log filter rows for efficient log querying.
+    table LogFilterRows {
+        type Key = u64; // global row index
         type Value = FilterMapRow;
     }
 
-    /// Stores block number to log value index mapping.
-    /// This allows finding where a block's logs start in the global sequence.
-    table FilterMapsBlockIndex {
+    /// Maps block numbers to their starting log index.
+    table BlockLogIndices {
         type Key = BlockNumber;
-        type Value = u64;
+        type Value = u64; // log value index
     }
-}
 
-/// Key for filter map rows
-#[derive(Ord, Clone, Eq, PartialOrd, PartialEq, Debug, Deserialize, Serialize, Hash)]
-pub struct FilterMapRowKey {
-    pub map_index: u32,
-    pub row_index: u32,
-}
-
-impl Encode for FilterMapRowKey {
-    type Encoded = [u8; 8];
-
-    fn encode(self) -> Self::Encoded {
-        let mut buf = [0u8; 8];
-        buf[0..4].copy_from_slice(&self.map_index.to_be_bytes());
-        buf[4..8].copy_from_slice(&self.row_index.to_be_bytes());
-        buf
-    }
-}
-
-impl Decode for FilterMapRowKey {
-    fn decode(value: &[u8]) -> Result<Self, crate::DatabaseError> {
-        if value.len() != 8 {
-            return Err(crate::DatabaseError::Decode);
-        }
-        Ok(Self {
-            map_index: u32::from_be_bytes(value[0..4].try_into().unwrap()),
-            row_index: u32::from_be_bytes(value[4..8].try_into().unwrap()),
-        })
+    /// Stores metadata for the log filtering system.
+    table LogFilterMetadata {
+        type Key = FilterMapMetadataKey;
+        type Value = FilterMapMetadata;
     }
 }
 
@@ -595,6 +569,32 @@ impl Decode for ChainStateKey {
         match value {
             [0] => Ok(Self::LastFinalizedBlock),
             [1] => Ok(Self::LastSafeBlockBlock),
+            _ => Err(crate::DatabaseError::Decode),
+        }
+    }
+}
+
+/// Key for filter map metadata
+#[derive(Ord, Clone, Eq, PartialOrd, PartialEq, Debug, Deserialize, Serialize, Hash)]
+pub enum FilterMapMetadataKey {
+    /// Singleton key for the filter map metadata
+    Metadata,
+}
+
+impl Encode for FilterMapMetadataKey {
+    type Encoded = [u8; 1];
+
+    fn encode(self) -> Self::Encoded {
+        match self {
+            Self::Metadata => [0],
+        }
+    }
+}
+
+impl Decode for FilterMapMetadataKey {
+    fn decode(value: &[u8]) -> Result<Self, crate::DatabaseError> {
+        match value {
+            [0] => Ok(Self::Metadata),
             _ => Err(crate::DatabaseError::Decode),
         }
     }

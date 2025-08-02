@@ -1,13 +1,12 @@
 // Test implementation of FilterMapsReader and FilterMapsWriter traits
 
-use alloy_primitives::BlockNumber;
+use alloy_primitives::{map::HashMap, BlockNumber};
 use reth_log_index::{
-    FilterMapBoundary, FilterMapMetadata, FilterMapRow, FilterMapRowEntry, FilterMapsReader,
-    FilterMapsWriter, MapIndex, MapRowIndex, RowIndex,
+    FilterMapMetadata, FilterMapRow, FilterMapRowEntry, FilterMapsReader, FilterMapsWriter,
+    MapIndex, MapRowIndex, RowIndex,
 };
 use reth_log_index::{FilterMapParams, FilterResult};
 use reth_provider::test_utils::MockEthProvider;
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Default)]
@@ -15,7 +14,6 @@ pub struct FilterMapsStorage {
     pub(crate) filter_rows: Arc<Mutex<HashMap<MapRowIndex, FilterMapRow>>>,
     pub(crate) block_log_value_indices: Arc<Mutex<HashMap<BlockNumber, u64>>>,
     pub(crate) metadata: Arc<Mutex<Option<FilterMapMetadata>>>,
-    pub(crate) boundaries: Arc<Mutex<HashMap<MapIndex, FilterMapBoundary>>>,
 }
 
 /// In-memory implementation of FilterMapsReader and FilterMapsWriter for testing
@@ -38,16 +36,7 @@ impl FilterMapsReader for InMemoryFilterMapsProvider {
         Ok(self.storage.metadata.lock().unwrap().clone())
     }
 
-    fn get_map_boundary(&self, map_index: MapIndex) -> FilterResult<Option<FilterMapBoundary>> {
-        Ok(self.storage.boundaries.lock().unwrap().get(&map_index).cloned())
-    }
-
-    fn get_filter_map_row(
-        &self,
-        map_index: MapIndex,
-        row_index: RowIndex,
-    ) -> FilterResult<Option<FilterMapRow>> {
-        let global_row_index = self.params.global_row_index(map_index, row_index);
+    fn get_filter_map_row(&self, global_row_index: u64) -> FilterResult<Option<FilterMapRow>> {
         let rows = self.storage.filter_rows.lock().unwrap();
 
         Ok(rows.get(&global_row_index).cloned())
@@ -61,14 +50,9 @@ impl FilterMapsReader for InMemoryFilterMapsProvider {
 }
 
 impl FilterMapsWriter for InMemoryFilterMapsProvider {
-    fn store_filter_map_rows(
-        &self,
-        map_index: MapIndex,
-        rows: Vec<FilterMapRowEntry>,
-    ) -> FilterResult<()> {
+    fn store_filter_map_rows(&self, rows: HashMap<MapRowIndex, FilterMapRow>) -> FilterResult<()> {
         let mut filter_rows = self.storage.filter_rows.lock().unwrap();
-        for (row_idx, row) in rows {
-            let global_row_index = self.params.global_row_index(map_index, row_idx);
+        for (global_row_index, row) in rows {
             filter_rows.insert(global_row_index, row);
         }
         Ok(())
@@ -86,15 +70,6 @@ impl FilterMapsWriter for InMemoryFilterMapsProvider {
 
     fn store_metadata(&self, metadata: FilterMapMetadata) -> FilterResult<()> {
         let _ = self.storage.metadata.lock().unwrap().insert(metadata);
-        Ok(())
-    }
-
-    fn store_map_boundary(
-        &self,
-        map_index: MapIndex,
-        boundary: FilterMapBoundary,
-    ) -> FilterResult<()> {
-        self.storage.boundaries.lock().unwrap().insert(map_index, boundary);
         Ok(())
     }
 }

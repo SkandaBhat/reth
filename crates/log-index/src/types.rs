@@ -17,15 +17,8 @@ pub type MapIndex = u64;
 /// A single row entry with its index in a filter map.
 pub type FilterMapRowEntry = (RowIndex, FilterMapRow);
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FilterMapBoundary {
-    /// Last block number in this map
-    pub last_block: BlockNumber,
-    /// Hash of the last block (for reorg detection)
-    pub last_block_hash: B256,
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "reth-codecs", derive(Compact))]
 pub struct FilterMapMetadata {
     /// First block that has complete log index
     pub first_indexed_block: BlockNumber,

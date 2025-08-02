@@ -6,13 +6,10 @@
 use crate::{
     constants::MAX_LAYERS,
     params::FilterMapParams,
-    types::{
-        FilterError, FilterMapBoundary, FilterMapMetadata, FilterMapRow, FilterMapRowEntry,
-        FilterResult, MapIndex, RowIndex,
-    },
+    types::{FilterError, FilterMapMetadata, FilterMapRow, FilterResult, MapRowIndex},
     utils::{address_value, topic_value},
 };
-use alloy_primitives::{Address, BlockNumber, FixedBytes, B256};
+use alloy_primitives::{map::HashMap, Address, BlockNumber, FixedBytes, B256};
 use std::{ops::RangeInclusive, vec::Vec};
 
 /// Provider trait for reading filter map data.
@@ -20,16 +17,9 @@ pub trait FilterMapsReader: Send + Sync {
     /// Get filter map metadata.
     fn get_metadata(&self) -> FilterResult<Option<FilterMapMetadata>>;
 
-    /// Get filter map boundary for a given map index.
-    fn get_map_boundary(&self, map_index: MapIndex) -> FilterResult<Option<FilterMapBoundary>>;
-
     /// Get filter map row for a given map and row index.
     /// Returns None if the row is not found.
-    fn get_filter_map_row(
-        &self,
-        map_index: MapIndex,
-        row_index: RowIndex,
-    ) -> FilterResult<Option<FilterMapRow>>;
+    fn get_filter_map_row(&self, global_row_index: u64) -> FilterResult<Option<FilterMapRow>>;
 
     /// Get the log value index for a given block number.
     fn get_log_value_index_for_block(&self, block: BlockNumber) -> FilterResult<Option<u64>>;
@@ -203,7 +193,8 @@ pub trait FilterMapsReader: Send + Sync {
             let max_row_length = params.max_row_length(layer_index) as usize;
 
             // Fetch the row
-            let row = self.get_filter_map_row(map_index, row_index)?;
+            let global_row_index = params.global_row_index(map_index, row_index);
+            let row = self.get_filter_map_row(global_row_index)?;
             if row.is_none() {
                 break;
             }
@@ -229,19 +220,8 @@ pub trait FilterMapsWriter: Send + Sync {
     /// Store filter map metadata.
     fn store_metadata(&self, metadata: FilterMapMetadata) -> FilterResult<()>;
 
-    /// Store filter map boundary for a given map index.
-    fn store_map_boundary(
-        &self,
-        map_index: MapIndex,
-        boundary: FilterMapBoundary,
-    ) -> FilterResult<()>;
-
     /// Store filter map rows.
-    fn store_filter_map_rows(
-        &self,
-        map_index: MapIndex,
-        rows: Vec<FilterMapRowEntry>,
-    ) -> FilterResult<()>;
+    fn store_filter_map_rows(&self, rows: HashMap<MapRowIndex, FilterMapRow>) -> FilterResult<()>;
 
     /// Store block to log value pointer mapping.
     fn store_log_value_index_for_block(
