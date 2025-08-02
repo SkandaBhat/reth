@@ -2,8 +2,8 @@ use crate::storage::InMemoryFilterMapsProvider;
 use alloy_primitives::BlockNumber;
 use reth_ethereum_primitives::Receipt;
 use reth_log_index::{
-    extract_log_values_from_block, FilterMapAccumulator, FilterMapMetadata, FilterMapParams,
-    FilterMapsReader, FilterMapsWriter, FilterResult,
+    extract_log_values_from_block, FilterMapAccumulator, FilterMapParams, FilterMapsReader,
+    FilterMapsWriter, FilterResult,
 };
 use reth_provider::test_utils::MockEthProvider;
 use reth_provider::{BlockReader, ReceiptProvider};
@@ -51,10 +51,8 @@ pub(crate) async fn index(
     let params = FilterMapParams::default();
 
     // Get starting position from storage
-    let log_value_index =
-        storage.get_log_value_index_for_block(*range.start())?.unwrap_or_default();
-    let map_index = log_value_index >> params.log_values_per_map;
-    let mut accumulator = FilterMapAccumulator::new(params.clone(), map_index, log_value_index);
+    let metadata = storage.get_metadata()?.unwrap_or_default();
+    let mut accumulator = FilterMapAccumulator::new(params.clone(), metadata);
 
     let blocks = provider.block_range(range.clone()).unwrap_or_default();
     let receipts: Vec<Vec<Receipt>> =

@@ -3,7 +3,10 @@ use std::collections::VecDeque;
 
 use crate::{
     params::FilterMapParams,
-    types::{BlockDelimiter, FilterError, FilterMapRow, FilterResult, LogValue, MapRowIndex},
+    types::{
+        BlockDelimiter, FilterError, FilterMapMetadata, FilterMapRow, FilterResult, LogValue,
+        MapRowIndex,
+    },
     MAX_LAYERS,
 };
 use std::mem;
@@ -37,6 +40,31 @@ impl FilterMap {
     pub fn new(index: u64) -> Self {
         Self { rows: HashMap::default(), block_log_value_indices: HashMap::default(), index }
     }
+
+    /// get the last block number
+    pub fn last_block_number(&self) -> Option<BlockNumber> {
+        self.block_log_value_indices.keys().max().copied()
+    }
+
+    /// get the map index
+    pub fn map_index(&self) -> u64 {
+        self.index
+    }
+
+    /// get the last log value index
+    pub fn last_log_value_index(&self) -> Option<u64> {
+        self.block_log_value_indices.values().max().copied()
+    }
+
+    /// get the rows
+    pub fn rows(&self) -> &HashMap<MapRowIndex, FilterMapRow> {
+        &self.rows
+    }
+
+    /// get the block log value indices
+    pub fn block_log_value_indices(&self) -> &HashMap<BlockNumber, u64> {
+        &self.block_log_value_indices
+    }
 }
 
 /// Builds filter maps from log data.
@@ -54,11 +82,14 @@ pub struct FilterMapAccumulator {
     pub row_cache: HashMap<(u64, B256), u64>,
     /// The completed filter maps.
     pub completed_maps: VecDeque<FilterMap>,
+    /// metadata for the accumulator
+    pub metadata: FilterMapMetadata,
 }
 
 impl FilterMapAccumulator {
     /// Creates a new builder for the specified map index.
-    pub fn new(params: FilterMapParams, map_index: u64, log_value_index: u64) -> Self {
+    pub fn new(params: FilterMapParams, metadata: FilterMapMetadata) -> Self {
+        let map_index = metadata.next_log_value_index >> params.log_values_per_map;
         let mut row_fill_levels = Vec::with_capacity(MAX_LAYERS as usize);
         for _ in 0..MAX_LAYERS {
             row_fill_levels.push(HashMap::default());
@@ -67,11 +98,17 @@ impl FilterMapAccumulator {
         Self {
             params,
             current_map: FilterMap::new(map_index),
-            log_value_index,
+            log_value_index: metadata.next_log_value_index,
             row_fill_levels,
             row_cache: HashMap::default(),
             completed_maps: VecDeque::new(),
+            metadata,
         }
+    }
+
+    /// get the current log value index
+    pub fn log_value_index(&self) -> u64 {
+        self.log_value_index
     }
 
     /// Adds a block delimiter to the accumulator.
@@ -87,7 +124,12 @@ impl FilterMapAccumulator {
         if self.should_finalize() {
             // Finalize the current map
             let finished = mem::take(&mut self.current_map);
-            self.completed_maps.push_back(finished);
+
+            self.metadata.last_indexed_block = finished.last_block_number().unwrap_or(0);
+            self.metadata.last_map_index = finished.map_index();
+            self.metadata.next_log_value_index = finished.last_log_value_index().unwrap_or(0) + 1;
+
+            self.completed_maps.push_back(finished.clone());
 
             // Reset for new map
             let map_index = self.log_value_index >> self.params.log_values_per_map;
@@ -152,8 +194,8 @@ impl FilterMapAccumulator {
     }
 
     /// Drains the completed maps.
-    pub fn drain_completed_maps(&mut self) -> impl Iterator<Item = FilterMap> + '_ {
-        self.completed_maps.drain(..)
+    pub fn drain_completed_maps(&mut self) -> Vec<FilterMap> {
+        self.completed_maps.drain(..).collect()
     }
 
     /// Returns the current unfinished map, if any.
