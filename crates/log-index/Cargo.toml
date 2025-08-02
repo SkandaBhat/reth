@@ -40,6 +40,7 @@ modular-bitfield = { workspace = true, optional = true }
 alloy-consensus.workspace = true
 rand.workspace = true
 test-fuzz.workspace = true
+futures.workspace = true
 
 # For integration tests
 reth-provider = { workspace = true, features = ["test-utils"] }

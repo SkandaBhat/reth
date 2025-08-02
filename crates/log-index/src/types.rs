@@ -30,11 +30,6 @@ pub struct LogValue {
 /// Errors that can occur when using `FilterMaps`.
 #[derive(Debug, thiserror::Error)]
 pub enum FilterError {
-    /// The filter matches all logs, which is not supported by `FilterMaps`.
-    /// Use legacy filtering for this case.
-    #[error("filter matches all logs")]
-    MatchAll,
-
     /// Database error occurred.
     #[error("database error: {0}")]
     Database(String),

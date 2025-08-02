@@ -2,8 +2,8 @@ use crate::storage::InMemoryFilterMapsProvider;
 use alloy_primitives::BlockNumber;
 use reth_ethereum_primitives::Receipt;
 use reth_log_index::{
-    extract_log_values_from_block, FilterMapAccumulator, FilterMapParams, FilterMapsReader,
-    FilterMapsWriter, FilterResult,
+    extract_log_values_from_block, storage::FilterMapMetadata, FilterMapAccumulator,
+    FilterMapParams, FilterMapsReader, FilterMapsWriter, FilterResult,
 };
 use reth_provider::test_utils::MockEthProvider;
 use reth_provider::{BlockReader, ReceiptProvider};
@@ -14,28 +14,30 @@ fn persist(
     accumulator: &mut FilterMapAccumulator,
     storage: &InMemoryFilterMapsProvider,
 ) -> FilterResult<()> {
+    let mut last_indexed_block = 0;
+    let mut last_map_index = 0;
     for completed_map in accumulator.drain_completed_maps() {
+        println!("storing filter map: {:?}", completed_map.index);
         // store filter map rows
         let rows =
             completed_map.rows.iter().map(|(row_index, row)| (*row_index, row.clone())).collect();
         storage.store_filter_map_rows(completed_map.index, rows)?;
 
         // store block delimiters
-        for delimiter in completed_map.delimiters {
-            storage.store_block_delimiter(delimiter)?;
+        for delimiter in &completed_map.delimiters {
+            storage.store_block_delimiter(delimiter.clone())?;
         }
+        last_indexed_block = completed_map.delimiters.last().unwrap().parent_block_number + 1;
+        last_map_index = completed_map.index;
     }
 
-    // store partial map
-    if let Some((map_index, map)) = accumulator.take_partial_map() {
-        let rows = map.rows.iter().map(|(row_index, row)| (*row_index, row.clone())).collect();
-        storage.store_filter_map_rows(map_index, rows)?;
+    // store metadata
+    let mut metadata = storage.get_metadata()?.unwrap_or_default();
+    metadata.last_indexed_block = last_indexed_block;
+    metadata.last_map_index = last_map_index;
+    metadata.next_log_value_index = accumulator.log_value_index + 1;
 
-        // store block delimiters
-        for delimiter in map.delimiters {
-            storage.store_block_delimiter(delimiter)?;
-        }
-    }
+    storage.store_metadata(metadata).unwrap();
 
     Ok(())
 }

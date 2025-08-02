@@ -3,7 +3,6 @@
 //! This module provides the high-level API for querying logs using `FilterMaps`.
 
 use crate::{
-    query::FilterMapsQueryProvider,
     types::{FilterError, FilterResult},
     utils::{address_value, topic_value},
 };
@@ -35,12 +34,12 @@ use crate::{storage::FilterMapRow, FilterMapParams, FilterMapsReader};
 /// Returns an error if:
 /// - The filter matches all logs (use legacy filtering instead)
 /// - There's an issue accessing the `FilterMaps` data
-pub fn query_logs<P: FilterMapsQueryProvider + FilterMapsReader + Clone + 'static>(
+pub fn query_logs<P: FilterMapsReader + Clone + 'static>(
     provider: Arc<P>,
     range: RangeInclusive<BlockNumber>,
     address: Address,
     topics: Vec<B256>,
-) -> FilterResult<Vec<Log>> {
+) -> FilterResult<Vec<u64>> {
     let params = FilterMapParams::default(); // TODO: figure out a better way to get the params
 
     let delimiter_start = provider.get_block_delimiter(*range.start())?.unwrap_or_default();
@@ -52,27 +51,22 @@ pub fn query_logs<P: FilterMapsQueryProvider + FilterMapsReader + Clone + 'stati
     let last_index =
         provider.get_block_delimiter(*range.end())?.unwrap_or_default().log_value_index;
 
+    println!("first_index: {:?}, last_index: {:?}", first_index, last_index);
+
     // Calculate map indices to search
     let first_map = first_index >> params.log_values_per_map;
     let last_map = last_index >> params.log_values_per_map;
     let map_indices: Vec<u64> = (first_map..=last_map).collect();
 
+    println!("map_indices: {:?}", map_indices);
+
     let log_indices =
         get_log_value_indices(provider.clone(), &map_indices, &address, &topics, &params)?;
 
-    // Collect logs from matches
-    let mut logs = Vec::new();
-    for log_index in log_indices {
-        if let Some(log) = provider.get_log(log_index)? {
-            // Verify it's actually from our address (filter out false positives)
-            logs.push(log);
-        }
-    }
-
-    Ok(logs)
+    Ok(log_indices)
 }
 
-fn get_log_value_indices<P: FilterMapsQueryProvider + FilterMapsReader + Clone + 'static>(
+fn get_log_value_indices<P: FilterMapsReader + Clone + 'static>(
     provider: Arc<P>,
     map_indices: &[u64],
     address: &Address,
@@ -88,12 +82,17 @@ fn get_log_value_indices<P: FilterMapsQueryProvider + FilterMapsReader + Clone +
     }
 
     let mut log_indices = Vec::new();
+    println!("address_matches: {:?}", address_matches);
 
     'address_loop: for address_match in address_matches {
         for (i, topic) in topics.iter().enumerate() {
             let topic_index = address_match + 1 + i as u64;
             let topic_value = topic_value(&topic);
             if !verify_index_matches(provider.as_ref(), &topic_value, topic_index, &params)? {
+                println!(
+                    "skipping because topic_index: {:?} does not match topic_value: {:?}",
+                    topic_index, topic_value
+                );
                 continue 'address_loop;
             }
         }

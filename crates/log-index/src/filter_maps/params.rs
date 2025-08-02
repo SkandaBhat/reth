@@ -9,7 +9,7 @@ use std::hash::Hasher;
 
 use crate::{
     constants::{DEFAULT_PARAMS, EXPECTED_MATCHES},
-    storage::FilterMapRow,
+    storage::{FilterMapRow, MapRowIndex},
     types::FilterError,
 };
 
@@ -226,6 +226,23 @@ impl FilterMapParams {
         results.sort_unstable();
         results.dedup();
         Ok(results)
+    }
+
+    /// Calculate the global row index for database storage.
+    ///
+    /// This ensures rows from the same map are stored together.
+    pub const fn global_row_index(&self, map_index: u64, row_index: u64) -> MapRowIndex {
+        map_index * self.map_height() + row_index
+    }
+
+    /// Get the map index from a global row index.
+    pub const fn map_from_global_row(&self, global_row: MapRowIndex) -> u64 {
+        global_row / self.map_height()
+    }
+
+    /// Get the row index from a global row index.
+    pub const fn row_from_global_row(&self, global_row: MapRowIndex) -> u64 {
+        global_row % self.map_height()
     }
 }
 

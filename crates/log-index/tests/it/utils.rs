@@ -1,5 +1,5 @@
 use alloy_consensus::BlockHeader;
-use alloy_primitives::{Address, BlockNumber, Log};
+use alloy_primitives::{logs_bloom, Address, BlockNumber, Log};
 use rand::Rng;
 use reth_ethereum_primitives::Receipt;
 use reth_provider::test_utils::MockEthProvider;
@@ -18,17 +18,19 @@ pub(crate) async fn create_test_provider_with_random_blocks_and_receipts(
 
     let provider = MockEthProvider::default();
 
-    let blocks = random_block_range(
+    let mut blocks = random_block_range(
         &mut rng,
         start_block..=start_block + blocks_count as u64 - 1,
         BlockRangeParams { tx_count: 0..tx_count, ..Default::default() },
     );
 
-    provider.extend_blocks(blocks.iter().cloned().map(|b| (b.hash(), b.into_block())));
+    // Create receipts and calculate bloom filters
+    let mut all_receipts: Vec<(BlockNumber, Vec<Receipt>)> = Vec::new();
+    let mut updated_blocks = Vec::new();
 
-    let mut receipts: Vec<(BlockNumber, Vec<Receipt>)> = Vec::with_capacity(blocks.len());
-    for block in &blocks {
-        receipts.reserve_exact(block.body().transactions.len());
+    for mut block in blocks {
+        let mut block_receipts = Vec::new();
+
         for transaction in block.body().transactions.iter() {
             let mut receipt = random_receipt(&mut rng, transaction, Some(0));
             //generate LOG_COUNT logs
@@ -39,11 +41,21 @@ pub(crate) async fn create_test_provider_with_random_blocks_and_receipts(
                 })
                 .collect();
             receipt.logs = logs;
-            receipts.push((block.number(), vec![receipt]));
+            block_receipts.push(receipt);
         }
+
+        // calculate bloom filter for the block
+        let bloom = logs_bloom(block_receipts.iter().flat_map(|r| r.logs.iter()));
+
+        // update the block header with the bloom filter
+        block.header_mut().logs_bloom = bloom;
+
+        all_receipts.push((block.number(), block_receipts));
+        updated_blocks.push(block);
     }
 
-    provider.extend_receipts(receipts.into_iter());
+    provider.extend_blocks(updated_blocks.into_iter().map(|b| (b.hash(), b.into_block())));
+    provider.extend_receipts(all_receipts.into_iter());
 
     provider
 }

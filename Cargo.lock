@@ -8623,6 +8623,7 @@ dependencies = [
  "alloy-rpc-types-eth",
  "bytes",
  "fnv",
+ "futures",
  "modular-bitfield",
  "rand 0.9.1",
  "reth-codecs",
