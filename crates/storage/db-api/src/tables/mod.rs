@@ -29,7 +29,7 @@ use crate::{
 use alloy_consensus::Header;
 use alloy_primitives::{Address, BlockHash, BlockNumber, TxHash, TxNumber, B256};
 use reth_ethereum_primitives::{Receipt, TransactionSigned};
-use reth_log_index::storage::{FilterMapRow, FilterMapsBlockDelimiterEntry};
+use reth_log_index::FilterMapRow;
 use reth_primitives_traits::{Account, Bytecode, StorageEntry};
 use reth_prune_types::{PruneCheckpoint, PruneSegment};
 use reth_stages_types::StageCheckpoint;
@@ -536,7 +536,7 @@ tables! {
     /// This allows finding where a block's logs start in the global sequence.
     table FilterMapsBlockIndex {
         type Key = BlockNumber;
-        type Value = FilterMapsBlockDelimiterEntry;
+        type Value = u64;
     }
 }
 

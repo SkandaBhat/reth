@@ -10,15 +10,11 @@ pub fn get_log_at_index(
     provider: Arc<InMemoryFilterMapsProvider>,
     log_index: u64,
 ) -> FilterResult<Option<Log>> {
-    let block_number = provider.find_block_for_log_index(log_index)?;
-    if block_number.is_none() {
+    let block_log_value_index = provider.find_block_for_log_value_index(log_index)?;
+    if block_log_value_index.is_none() {
         return Ok(None); // No block contains this log index
     }
-    let (block_number, block_start_log_value_index) = block_number.unwrap();
-    println!(
-        "block_number: {:?}, block_start_log_value_index: {:?}",
-        block_number, block_start_log_value_index
-    );
+    let (block_number, block_start_log_value_index) = block_log_value_index.unwrap();
 
     // Get receipts for the block
     let receipts = provider
@@ -31,10 +27,6 @@ pub fn get_log_at_index(
     // Iterate through all logs in the block to find the one at log_index
     for receipt in receipts {
         for log in receipt.logs {
-            println!(
-                "current_log_value_index: {:?}, log_index: {:?}",
-                current_log_value_index, log_index
-            );
             // Each log occupies multiple log value indices:
             // - 1 for the address
             // - 1 for each topic
@@ -49,7 +41,6 @@ pub fn get_log_at_index(
             }
 
             // increment the current log value index by the number of log values in this log and check the next log
-            println!("incrementing current_log_value_index by {:?}", log_value_count);
             current_log_value_index += log_value_count;
         }
     }

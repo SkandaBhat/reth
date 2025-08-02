@@ -1,12 +1,11 @@
-use std::fs::Metadata;
 use std::{iter::StepBy, ops::RangeInclusive, sync::Arc};
 
 use alloy_consensus::BlockHeader;
 use alloy_primitives::{Address, Log, B256};
+use alloy_rpc_types_eth::BlockHashOrNumber;
 use alloy_rpc_types_eth::Filter;
-use alloy_rpc_types_eth::{BlockHashOrNumber, BlockNumHash};
-use reth_log_index::{query_logs, FilterError, FilterMapsReader, FilterResult};
-use reth_provider::{BlockHashReader, HeaderProvider, ProviderError, ReceiptProvider};
+use reth_log_index::{FilterError, FilterMapsReader, FilterResult};
+use reth_provider::{HeaderProvider, ReceiptProvider};
 
 use crate::{query::get_log_at_index, storage::InMemoryFilterMapsProvider};
 
@@ -52,17 +51,17 @@ pub async fn get_logs_in_block_range(
         .map(|topic| *topic.to_value_or_array().unwrap().as_value().unwrap())
         .collect();
 
-    let metadata = provider.get_metadata()?;
+    let metadata = provider.get_metadata()?.unwrap();
 
-    // Calculate indexed range (intersection with indexed data)
-    let indexed_range = match metadata {
-        Some(meta)
-            if from_block <= meta.last_indexed_block && to_block >= meta.first_indexed_block =>
-        {
-            Some(from_block.max(meta.first_indexed_block)..=to_block.min(meta.last_indexed_block))
-        }
-        _ => None,
-    };
+    let indexed_range =
+        if from_block <= metadata.last_indexed_block && to_block >= metadata.first_indexed_block {
+            Some(
+                from_block.max(metadata.first_indexed_block)
+                    ..=to_block.min(metadata.last_indexed_block),
+            )
+        } else {
+            None
+        };
 
     // Calculate bloom ranges (intersection with indexed data)
     let bloom_ranges = match &indexed_range {
@@ -74,16 +73,13 @@ pub async fn get_logs_in_block_range(
             }
 
             if to_block > *indexed.end() {
-                ranges.push((*indexed.end() + 1)..=to_block);
+                ranges.push((*indexed.end())..=to_block);
             }
 
             ranges
         }
-        None => vec![from_block..=to_block],
+        _ => vec![from_block..=to_block],
     };
-
-    println!("indexed_range: {:?}", indexed_range);
-    println!("bloom_ranges: {:?}", bloom_ranges);
 
     // Fetch from index (if available)
     let index_future = if let Some(range) = indexed_range {
@@ -145,12 +141,9 @@ async fn get_logs_from_indexed_range(
 ) -> FilterResult<Vec<Log>> {
     let mut logs = Vec::new();
 
-    let log_indices = query_logs(provider.clone(), index_range, address, topics)?;
-
-    println!("log_indices: {:?}", log_indices);
+    let log_indices = provider.query_logs(index_range, address, topics)?;
 
     for log_index in log_indices {
-        println!("getting log at index: {:?}", log_index);
         let log = get_log_at_index(provider.clone(), log_index);
         if let Ok(Some(log)) = log {
             if log.address == address {
@@ -161,8 +154,6 @@ async fn get_logs_from_indexed_range(
         }
     }
 
-    println!("returning logs from indexed range: {:?}", logs.len());
-
     Ok(logs)
 }
 
@@ -172,7 +163,6 @@ async fn get_logs_in_block_range_bloom(
     from_block: u64,
     to_block: u64,
 ) -> FilterResult<Vec<Log>> {
-    println!("getting logs in bloom filter from {} to {}", from_block, to_block);
     let mut all_logs = Vec::new();
 
     // loop over the range of new blocks and check logs if the filter matches the log's bloom
@@ -197,8 +187,6 @@ async fn get_logs_in_block_range_bloom(
             }
         }
     }
-
-    println!("returning logs from bloom filter: {:?}", all_logs.len());
 
     Ok(all_logs)
 }

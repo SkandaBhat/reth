@@ -1,43 +1,61 @@
 use std::collections::{HashMap, VecDeque};
 
-use alloy_primitives::B256;
+use alloy_primitives::{BlockNumber, B256};
 
 use crate::{
-    storage::{FilterMapRow, FilterMapsBlockDelimiterEntry, RowIndex},
-    types::BlockDelimiter,
-    FilterError, FilterMapParams, FilterResult, MAX_LAYERS,
+    params::FilterMapParams,
+    types::{
+        BlockDelimiter, FilterError, FilterMapRow, FilterResult, LogValue, MapRowIndex, RowIndex,
+    },
+    MAX_LAYERS,
 };
 use std::mem;
 
+/// A filter map is a collection of rows that contain log values.
+/// It is used to store the log values in a way that allows for efficient querying.
+/// It is also used to store the block number and log value index for each block.
+/// This is used to allow for efficient querying of the log values in a block range.
+///
+/// The filter map is a 2D array of rows and columns.
+/// The rows are the rows of the filter map.
+/// The columns are the columns of the filter map.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FilterMap {
+    /// The rows of the filter map.
     pub rows: HashMap<RowIndex, FilterMapRow>,
-    pub delimiters: Vec<FilterMapsBlockDelimiterEntry>,
+    /// The block number and log value index for each block.
+    pub block_log_value_indices: HashMap<BlockNumber, u64>, // block number -> log value index
+    /// The index of the filter map.
     pub index: u64,
 }
 
 impl Default for FilterMap {
     fn default() -> Self {
-        Self { rows: HashMap::new(), delimiters: vec![], index: 0 }
+        Self { rows: HashMap::new(), block_log_value_indices: HashMap::new(), index: 0 }
     }
 }
 
 impl FilterMap {
+    /// Creates a new filter map.
     pub fn new(index: u64) -> Self {
-        Self { rows: HashMap::new(), delimiters: vec![], index }
+        Self { rows: HashMap::new(), block_log_value_indices: HashMap::new(), index }
     }
 }
 
 /// Builds filter maps from log data.
 #[derive(Debug, Clone)]
 pub struct FilterMapAccumulator {
+    /// The parameters for the filter map.
     pub params: FilterMapParams,
+    /// The current filter map.
     pub current_map: FilterMap,
+    /// The log value index.
     pub log_value_index: u64,
     /// Tracks how many values are in each row at each layer.
     pub row_fill_levels: Vec<HashMap<u64, u64>>,
     /// Cache for row index calculations.
     pub row_cache: HashMap<(u64, B256), u64>,
+    /// The completed filter maps.
     pub completed_maps: VecDeque<FilterMap>,
 }
 
@@ -61,13 +79,8 @@ impl FilterMapAccumulator {
 
     /// Adds a block delimiter to the accumulator.
     pub fn add_block_delimiter(&mut self, delimiter: BlockDelimiter) -> FilterResult<()> {
-        let delimiter = FilterMapsBlockDelimiterEntry {
-            parent_block_hash: delimiter.block_hash,
-            parent_block_number: delimiter.block_number,
-            parent_block_timestamp: delimiter.timestamp,
-            log_value_index: self.log_value_index,
-        };
-        self.current_map.delimiters.push(delimiter);
+        let block_number = delimiter.block_number;
+        self.current_map.block_log_value_indices.insert(block_number, self.log_value_index);
         self.log_value_index += 1;
         Ok(())
     }
@@ -122,6 +135,20 @@ impl FilterMapAccumulator {
         }
 
         Err(FilterError::MaxLayersExceeded(MAX_LAYERS))
+    }
+
+    /// Process a single block of log values.
+    /// Adds the block delimiter and all log values to the accumulator.
+    pub fn process_block(
+        &mut self,
+        delimiter: BlockDelimiter,
+        log_values: Vec<LogValue>,
+    ) -> FilterResult<()> {
+        self.add_block_delimiter(delimiter)?;
+        for log_value in log_values {
+            self.add_log_value(log_value.value)?;
+        }
+        Ok(())
     }
 
     /// Drains the completed maps.

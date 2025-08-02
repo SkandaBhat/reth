@@ -9,8 +9,7 @@ use std::hash::Hasher;
 
 use crate::{
     constants::{DEFAULT_PARAMS, EXPECTED_MATCHES},
-    storage::{FilterMapRow, MapRowIndex},
-    types::FilterError,
+    types::{FilterError, FilterMapRow, MapRowIndex},
 };
 
 /// A strictly monotonically increasing list of log value indices in the range of a
@@ -174,6 +173,13 @@ impl FilterMapParams {
         self.base_row_length() << log_layer_diff
     }
 
+    /// Extract the position-within-map from a column value
+    /// Column value format: [position_bits | collision_filter_bits]
+    /// We extract the upper position_bits
+    pub fn position_from_column(&self, column_value: u64) -> u64 {
+        column_value >> (self.log_map_width - self.log_values_per_map)
+    }
+
     /// Returns the list of log value indices potentially matching the given log
     /// value hash in the range of the filter map the row belongs to.
     ///
@@ -192,33 +198,19 @@ impl FilterMapParams {
         log_value: &B256,
     ) -> Result<PotentialMatches, FilterError> {
         let mut results = Vec::with_capacity(EXPECTED_MATCHES);
-        let map_first = map_index << self.log_values_per_map;
+        let map_first_log_value_index = map_index << self.log_values_per_map;
 
-        for (layer_index, row) in rows.iter().enumerate() {
-            let max_len = self.max_row_length(layer_index as u64) as usize;
-            let row_len = row.columns.len().min(max_len);
-
+        for row in rows {
             // Check each column in the row up to the effective length
-            for &column_value in &row.columns[..row_len] {
+            for &column_value in &row.columns {
                 let potential_match =
-                    map_first + (column_value >> (self.log_map_width - self.log_values_per_map));
+                    map_first_log_value_index + self.position_from_column(column_value);
 
                 let expected_column = self.column_index(potential_match, log_value);
 
                 if column_value == expected_column {
                     results.push(potential_match);
                 }
-            }
-
-            // If this row isn't full, we're done checking
-            if row_len < max_len {
-                break;
-            }
-
-            // If we're at the last row and it's full, we have insufficient rows
-            if layer_index == rows.len() - 1 {
-                println!("  ERROR: All rows full, insufficient layers!");
-                return Err(FilterError::InsufficientLayers(map_index));
             }
         }
 

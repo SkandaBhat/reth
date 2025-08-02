@@ -1,10 +1,9 @@
 // Test implementation of FilterMapsReader and FilterMapsWriter traits
 
 use alloy_primitives::BlockNumber;
-use reth_log_index::storage::{
-    FilterMapBoundary, FilterMapMetadata, FilterMapRow, FilterMapRowEntry,
-    FilterMapsBlockDelimiterEntry, FilterMapsReader, FilterMapsWriter, MapIndex, MapRowIndex,
-    RowIndex,
+use reth_log_index::{
+    FilterMapBoundary, FilterMapMetadata, FilterMapRow, FilterMapRowEntry, FilterMapsReader,
+    FilterMapsWriter, MapIndex, MapRowIndex, RowIndex,
 };
 use reth_log_index::{FilterMapParams, FilterResult};
 use reth_provider::test_utils::MockEthProvider;
@@ -14,7 +13,7 @@ use std::sync::{Arc, Mutex};
 #[derive(Clone, Default)]
 pub struct FilterMapsStorage {
     pub(crate) filter_rows: Arc<Mutex<HashMap<MapRowIndex, FilterMapRow>>>,
-    pub(crate) block_delimiters: Arc<Mutex<HashMap<BlockNumber, FilterMapsBlockDelimiterEntry>>>,
+    pub(crate) block_log_value_indices: Arc<Mutex<HashMap<BlockNumber, u64>>>,
     pub(crate) metadata: Arc<Mutex<Option<FilterMapMetadata>>>,
     pub(crate) boundaries: Arc<Mutex<HashMap<MapIndex, FilterMapBoundary>>>,
 }
@@ -43,43 +42,21 @@ impl FilterMapsReader for InMemoryFilterMapsProvider {
         Ok(self.storage.boundaries.lock().unwrap().get(&map_index).cloned())
     }
 
-    fn get_filter_map_rows(
+    fn get_filter_map_row(
         &self,
         map_index: MapIndex,
-        row_indices: &[RowIndex],
-    ) -> FilterResult<Vec<FilterMapRow>> {
+        row_index: RowIndex,
+    ) -> FilterResult<Option<FilterMapRow>> {
+        let global_row_index = self.params.global_row_index(map_index, row_index);
         let rows = self.storage.filter_rows.lock().unwrap();
-        let mut result = Vec::new();
 
-        for &row_idx in row_indices {
-            let global_row_index = self.params.global_row_index(map_index, row_idx);
-            let row = rows
-                .get(&global_row_index)
-                .cloned()
-                .unwrap_or_else(|| FilterMapRow { columns: Vec::new() });
-            result.push(row);
-        }
-
-        Ok(result)
+        Ok(rows.get(&global_row_index).cloned())
     }
 
-    fn get_block_delimiter(
-        &self,
-        block: BlockNumber,
-    ) -> FilterResult<Option<FilterMapsBlockDelimiterEntry>> {
-        let mut delimiter = self.storage.block_delimiters.lock().unwrap().get(&block).cloned();
-        // if there is no delimiter for the block, walk back until we find one
-        if delimiter.is_none() && block > 0 {
-            let mut block = block.saturating_sub(1);
-            while block > 0 {
-                delimiter = self.storage.block_delimiters.lock().unwrap().get(&block).cloned();
-                if delimiter.is_some() {
-                    break;
-                }
-                block -= 1;
-            }
-        }
-        Ok(delimiter)
+    fn get_log_value_index_for_block(&self, block: BlockNumber) -> FilterResult<Option<u64>> {
+        let log_value_index =
+            self.storage.block_log_value_indices.lock().unwrap().get(&block).cloned();
+        Ok(log_value_index)
     }
 }
 
@@ -97,12 +74,12 @@ impl FilterMapsWriter for InMemoryFilterMapsProvider {
         Ok(())
     }
 
-    fn store_block_delimiter(&self, delimiter: FilterMapsBlockDelimiterEntry) -> FilterResult<()> {
-        self.storage
-            .block_delimiters
-            .lock()
-            .unwrap()
-            .insert(delimiter.parent_block_number, delimiter);
+    fn store_log_value_index_for_block(
+        &self,
+        block: BlockNumber,
+        log_value_index: u64,
+    ) -> FilterResult<()> {
+        self.storage.block_log_value_indices.lock().unwrap().insert(block, log_value_index);
 
         Ok(())
     }

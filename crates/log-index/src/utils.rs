@@ -28,7 +28,7 @@ pub fn topic_value(topic: &B256) -> B256 {
 pub fn extract_log_values_from_block(
     block: Block,
     receipts: Vec<Receipt>,
-) -> (Option<BlockDelimiter>, Vec<LogValue>) {
+) -> (BlockDelimiter, Vec<LogValue>) {
     let mut log_values: Vec<LogValue> = Vec::new();
     let block_number = block.number;
     let parent_hash = block.parent_hash;
@@ -36,16 +36,8 @@ pub fn extract_log_values_from_block(
     let transactions = block.body.transactions();
 
     // Add block delimiter
-    let delimiter = if block_number > 0 {
-        let delimiter = BlockDelimiter {
-            block_number: block_number - 1,
-            block_hash: parent_hash,
-            timestamp: parent_timestamp,
-        };
-        Some(delimiter)
-    } else {
-        None
-    };
+    let delimiter =
+        BlockDelimiter { block_number, block_hash: parent_hash, timestamp: parent_timestamp };
 
     // Add log values
     for (tx_index, (receipt, transaction)) in receipts.iter().zip(transactions).enumerate() {

@@ -5,8 +5,6 @@
 use alloy_primitives::{BlockNumber, Log, B256};
 use alloy_rpc_types_eth::Filter;
 use rand::seq::SliceRandom;
-use reth_log_index::storage::FilterMapMetadata;
-use reth_log_index::FilterMapsWriter;
 use reth_provider::{test_utils::MockEthProvider, ReceiptProvider};
 use std::sync::Arc;
 
@@ -16,7 +14,7 @@ use crate::storage::InMemoryFilterMapsProvider;
 use crate::utils::create_test_provider_with_random_blocks_and_receipts;
 
 const START_BLOCK: BlockNumber = 0;
-const BLOCKS_COUNT: usize = 500;
+const BLOCKS_COUNT: usize = 1000;
 const TX_COUNT: u8 = 150;
 const LOG_COUNT: u8 = 1;
 const MAX_TOPICS: usize = 4;
@@ -57,15 +55,15 @@ async fn test_filter_map() {
     println!("number of logs: {:?}", logs.len());
 
     // shuffle the logs
-    // let mut rng = rand::rng();
-    // let mut logs = logs.clone();
-    // logs.shuffle(&mut rng);
+    let mut rng = rand::rng();
+    let mut logs = logs.clone();
+    logs.shuffle(&mut rng);
 
     // find all the logs in the filter map
     println!("fetching logs");
     for (i, log) in logs.iter().enumerate() {
-        if i % 100 == 0 {
-            println!("fetching log: {:?}", i);
+        if i % 10000 == 0 {
+            println!("progress: {:?}%", (i as f64) / (logs.len() as f64) * 100.0);
         }
         let address = log.address.clone();
 
@@ -97,9 +95,10 @@ async fn test_filter_map() {
 
         assert!(
             !logs.is_empty(),
-            "Should find at least one matching log, expected log address: {:?}, topics: {:?}",
+            "Should find at least one matching log, expected log address: {:?}, topics: {:?}, iteration: {:?}",
             log.address,
-            topics.len()
+            topics.len(),
+            i
         );
 
         for l in logs.iter() {
