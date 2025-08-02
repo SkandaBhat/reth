@@ -8629,6 +8629,7 @@ dependencies = [
  "reth-codecs",
  "reth-errors",
  "reth-ethereum-primitives",
+ "reth-primitives-traits",
  "reth-provider",
  "reth-storage-api",
  "reth-storage-errors",

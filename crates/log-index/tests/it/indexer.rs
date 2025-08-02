@@ -21,7 +21,9 @@ fn persist(
         println!("storing filter map: {:?}", completed_map.index);
         // store filter map rows
 
-        storage.store_filter_map_rows(completed_map.rows)?;
+        for (map_row_index, row) in completed_map.rows {
+            storage.store_filter_map_row(map_row_index, row)?;
+        }
 
         // store block log value indices
         for (block_number, log_value_index) in completed_map.block_log_value_indices {
@@ -65,7 +67,7 @@ pub(crate) async fn index(
         .map(|(block, receipts)| extract_log_values_from_block(block, receipts))
         .for_each(|(block_delimiter, log_values)| {
             let _ = accumulator
-                .process_block(block_delimiter, log_values)
+                .add_block(block_delimiter, log_values)
                 .map_err(|e| eprintln!("Error processing block: {:?}", e));
         });
 

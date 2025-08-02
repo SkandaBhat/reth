@@ -575,9 +575,10 @@ impl Decode for ChainStateKey {
 }
 
 /// Key for filter map metadata
-#[derive(Ord, Clone, Eq, PartialOrd, PartialEq, Debug, Deserialize, Serialize, Hash)]
+#[derive(Ord, Clone, Eq, PartialOrd, PartialEq, Debug, Deserialize, Serialize, Hash, Default)]
 pub enum FilterMapMetadataKey {
     /// Singleton key for the filter map metadata
+    #[default]
     Metadata,
 }
 

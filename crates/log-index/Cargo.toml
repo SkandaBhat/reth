@@ -23,6 +23,7 @@ bytes.workspace = true
 # reth
 reth-errors.workspace = true
 reth-ethereum-primitives.workspace = true
+reth-primitives-traits.workspace = true
 
 
 # misc

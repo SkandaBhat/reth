@@ -50,11 +50,13 @@ impl FilterMapsReader for InMemoryFilterMapsProvider {
 }
 
 impl FilterMapsWriter for InMemoryFilterMapsProvider {
-    fn store_filter_map_rows(&self, rows: HashMap<MapRowIndex, FilterMapRow>) -> FilterResult<()> {
+    fn store_filter_map_row(
+        &self,
+        map_row_index: MapRowIndex,
+        row: FilterMapRow,
+    ) -> FilterResult<()> {
         let mut filter_rows = self.storage.filter_rows.lock().unwrap();
-        for (global_row_index, row) in rows {
-            filter_rows.insert(global_row_index, row);
-        }
+        filter_rows.insert(map_row_index, row);
         Ok(())
     }
 

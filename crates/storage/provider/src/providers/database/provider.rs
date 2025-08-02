@@ -3208,12 +3208,14 @@ impl<TX: DbTx + 'static, N: NodeTypes> FilterMapsReader for DatabaseProvider<TX,
 }
 
 impl<TX: DbTxMut, N: NodeTypes> FilterMapsWriter for DatabaseProvider<TX, N> {
-    fn store_filter_map_rows(&self, rows: HashMap<MapRowIndex, FilterMapRow>) -> FilterResult<()> {
-        for (global_row_index, row) in rows {
-            self.tx
-                .put::<tables::LogFilterRows>(global_row_index, row)
-                .map_err(|e| FilterError::Database(e.to_string()))?;
-        }
+    fn store_filter_map_row(
+        &self,
+        map_row_index: MapRowIndex,
+        row: FilterMapRow,
+    ) -> FilterResult<()> {
+        self.tx
+            .put::<tables::LogFilterRows>(map_row_index, row)
+            .map_err(|e| FilterError::Database(e.to_string()))?;
         Ok(())
     }
 

@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use std::hash::Hasher;
 
 use crate::{
-    constants::{DEFAULT_PARAMS, EXPECTED_MATCHES},
+    constants::{DEFAULT_PARAMS, EXPECTED_MATCHES, RANGE_TEST_PARAMS},
     types::{FilterError, FilterMapRow, MapRowIndex},
 };
 
@@ -47,6 +47,11 @@ impl Default for FilterMapParams {
 }
 
 impl FilterMapParams {
+    /// Test parameters that put one log value per epoch, ensuring block exact tail unindexing for
+    /// testing
+    pub fn range_test() -> Self {
+        RANGE_TEST_PARAMS
+    }
     /// Get the number of rows per map
     pub const fn map_height(&self) -> u64 {
         1 << self.log_map_height

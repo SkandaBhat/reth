@@ -116,7 +116,7 @@ where
     pub fn run(&self, targets: StaticFileTargets) -> StaticFileProducerResult {
         // If there are no targets, do not produce any static files and return early
         if !targets.any() {
-            return Ok(targets)
+            return Ok(targets);
         }
 
         debug_assert!(targets.is_contiguous_to_highest_static_files(
@@ -209,8 +209,8 @@ where
                 self.get_static_file_target(highest_static_files.headers, finalized_block_number)
             }),
             // StaticFile receipts only if they're not pruned according to the user configuration
-            receipts: if self.prune_modes.receipts.is_none() &&
-                self.prune_modes.receipts_log_filter.is_empty()
+            receipts: if self.prune_modes.receipts.is_none()
+                && self.prune_modes.receipts_log_filter.is_empty()
             {
                 finalized_block_numbers.receipts.and_then(|finalized_block_number| {
                     self.get_static_file_target(
@@ -304,8 +304,10 @@ mod tests {
         let mut receipts = Vec::new();
         for block in &blocks {
             for transaction in &block.body().transactions {
-                receipts
-                    .push((receipts.len() as u64, random_receipt(&mut rng, transaction, Some(0))));
+                receipts.push((
+                    receipts.len() as u64,
+                    random_receipt(&mut rng, transaction, Some(0), None),
+                ));
             }
         }
         db.insert_receipts(receipts).expect("insert receipts");

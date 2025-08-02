@@ -42,8 +42,8 @@ impl FilterMap {
     }
 
     /// get the last block number
-    pub fn last_block_number(&self) -> Option<BlockNumber> {
-        self.block_log_value_indices.keys().max().copied()
+    pub fn last_block_number(&self) -> BlockNumber {
+        self.block_log_value_indices.keys().max().copied().unwrap_or(0)
     }
 
     /// get the map index
@@ -121,25 +121,6 @@ impl FilterMapAccumulator {
 
     /// Adds a log value to the map at the appropriate position.
     pub fn add_log_value(&mut self, value: B256) -> FilterResult<()> {
-        if self.should_finalize() {
-            // Finalize the current map
-            let finished = mem::take(&mut self.current_map);
-
-            self.metadata.last_indexed_block = finished.last_block_number().unwrap_or(0);
-            self.metadata.last_map_index = finished.map_index();
-            self.metadata.next_log_value_index = finished.last_log_value_index().unwrap_or(0) + 1;
-
-            self.completed_maps.push_back(finished.clone());
-
-            // Reset for new map
-            let map_index = self.log_value_index >> self.params.log_values_per_map;
-            self.current_map = FilterMap::new(map_index);
-            for row_fill_level in &mut self.row_fill_levels {
-                row_fill_level.clear();
-            }
-            self.row_cache.clear();
-        }
-
         // Find the appropriate layer and insert the value
         for layer in 0..MAX_LAYERS {
             let cache_key = (layer, value);
@@ -168,20 +149,15 @@ impl FilterMapAccumulator {
                 // increment log value index
                 self.log_value_index += 1;
                 return Ok(());
-            } else {
-                println!(
-                    "Max length reached for layer row_idx: {}, current_len: {}, max_len: {}",
-                    row_idx, current_len, max_len
-                );
             }
         }
 
         Err(FilterError::MaxLayersExceeded(MAX_LAYERS))
     }
 
-    /// Process a single block of log values.
+    /// Add a single block of log values.
     /// Adds the block delimiter and all log values to the accumulator.
-    pub fn process_block(
+    pub fn add_block(
         &mut self,
         delimiter: BlockDelimiter,
         log_values: Vec<LogValue>,
@@ -189,6 +165,24 @@ impl FilterMapAccumulator {
         self.add_block_delimiter(delimiter)?;
         for log_value in log_values {
             self.add_log_value(log_value.value)?;
+        }
+        if self.should_finalize() {
+            // Finalize the current map
+            let finished = mem::take(&mut self.current_map);
+
+            self.metadata.last_indexed_block = finished.last_block_number();
+            self.metadata.last_map_index = finished.map_index();
+            self.metadata.next_log_value_index = finished.last_log_value_index().unwrap_or(0) + 1;
+
+            self.completed_maps.push_back(finished.clone());
+
+            // Reset for new map
+            let map_index = self.log_value_index >> self.params.log_values_per_map;
+            self.current_map = FilterMap::new(map_index);
+            for row_fill_level in &mut self.row_fill_levels {
+                row_fill_level.clear();
+            }
+            self.row_cache.clear();
         }
         Ok(())
     }

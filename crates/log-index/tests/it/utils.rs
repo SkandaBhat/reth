@@ -32,7 +32,7 @@ pub(crate) async fn create_test_provider_with_random_blocks_and_receipts(
         let mut block_receipts = Vec::new();
 
         for transaction in block.body().transactions.iter() {
-            let mut receipt = random_receipt(&mut rng, transaction, Some(0));
+            let mut receipt = random_receipt(&mut rng, transaction, Some(0), None);
             //generate LOG_COUNT logs
             let logs: Vec<Log> = (0..log_count)
                 .map(|_| {

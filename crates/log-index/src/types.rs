@@ -5,6 +5,9 @@ use reth_codecs::Compact;
 use serde::{Deserialize, Serialize};
 use std::vec::Vec;
 
+/// Log value index.
+pub type LogValueIndex = u64;
+
 /// Global row index.
 pub type MapRowIndex = u64;
 
@@ -17,7 +20,7 @@ pub type MapIndex = u64;
 /// A single row entry with its index in a filter map.
 pub type FilterMapRowEntry = (RowIndex, FilterMapRow);
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, Copy)]
 #[cfg_attr(feature = "reth-codecs", derive(Compact))]
 pub struct FilterMapMetadata {
     /// First block that has complete log index

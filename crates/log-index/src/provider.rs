@@ -221,7 +221,11 @@ pub trait FilterMapsWriter: Send + Sync {
     fn store_metadata(&self, metadata: FilterMapMetadata) -> FilterResult<()>;
 
     /// Store filter map rows.
-    fn store_filter_map_rows(&self, rows: HashMap<MapRowIndex, FilterMapRow>) -> FilterResult<()>;
+    fn store_filter_map_row(
+        &self,
+        map_row_index: MapRowIndex,
+        row: FilterMapRow,
+    ) -> FilterResult<()>;
 
     /// Store block to log value pointer mapping.
     fn store_log_value_index_for_block(
