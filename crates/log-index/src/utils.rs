@@ -22,7 +22,6 @@ pub fn topic_value(topic: &B256) -> B256 {
 /// This function extracts log values from a block and returns them as a vector of `LogValue`s.
 ///
 /// # Arguments
-///
 pub fn extract_log_values_from_block<B: Block, R: Receipt>(
     block: B,
     receipts: Vec<R>,

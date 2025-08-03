@@ -2,10 +2,9 @@
 
 use alloy_primitives::{map::HashMap, BlockNumber};
 use reth_log_index::{
-    FilterMapMetadata, FilterMapRow, FilterMapRowEntry, FilterMapsReader, FilterMapsWriter,
-    MapIndex, MapRowIndex, RowIndex,
+    FilterMapMetadata, FilterMapParams, FilterMapRow, FilterMapRowEntry, FilterMapsReader,
+    FilterMapsWriter, FilterResult, MapIndex, MapRowIndex, RowIndex,
 };
-use reth_log_index::{FilterMapParams, FilterResult};
 use reth_provider::test_utils::MockEthProvider;
 use std::sync::{Arc, Mutex};
 

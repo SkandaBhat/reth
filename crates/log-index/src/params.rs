@@ -325,8 +325,8 @@ mod tests {
             let mut rng = rng();
             let map_index = rng.random::<u64>();
 
-            let lv_index = map_index
-                << params.log_values_per_map + rng.random_range(0..params.values_per_map());
+            let lv_index = (map_index << params.log_values_per_map) +
+                rng.random_range(0..params.values_per_map());
 
             // Generate random hash
             let mut lv_hash_bytes = [0u8; 32];

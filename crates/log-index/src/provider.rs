@@ -9,7 +9,7 @@ use crate::{
     types::{FilterError, FilterMapMetadata, FilterMapRow, FilterResult, MapRowIndex},
     utils::{address_value, topic_value},
 };
-use alloy_primitives::{map::HashMap, Address, BlockNumber, FixedBytes, B256};
+use alloy_primitives::{Address, BlockNumber, FixedBytes, B256};
 use std::{ops::RangeInclusive, vec::Vec};
 
 /// Provider trait for reading filter map data.
@@ -27,7 +27,8 @@ pub trait FilterMapsReader: Send + Sync {
     /// Find which block contains the given log value index, using binary search.
     /// Returns None if the log index is beyond the indexed range.
     ///
-    /// The returned tuple contains the block number and the log value index of the first log in the block.
+    /// The returned tuple contains the block number and the log value index of the first log in the
+    /// block.
     fn find_block_for_log_value_index(
         &self,
         log_value_index: u64,
@@ -64,7 +65,6 @@ pub trait FilterMapsReader: Send + Sync {
                     end = mid.saturating_sub(1);
                 }
             } else {
-                println!("no delimiter found for block: {:?}", mid);
                 // no delimiter found, this shouldnt happen in valid data
                 return Err(FilterError::Database(
                     "No start log value index found for block".to_string(),
@@ -134,9 +134,11 @@ pub trait FilterMapsReader: Send + Sync {
             let address_matches =
                 self.get_potential_matches_in_map(map_index, &address_value, &params)?;
 
-            // for the address matches, we need to check if the subsequent topics match the expected indices.
+            // for the address matches, we need to check if the subsequent topics match the expected
+            // indices.
             'address_loop: for address_match in address_matches {
-                let mut expected_topic_index = address_match + 1; // the first topic should appear after the address match, so we start at address_match + 1
+                let mut expected_topic_index = address_match + 1; // the first topic should appear after the address match, so we start at
+                                                                  // address_match + 1
                 for expected_topic_value in topic_values.iter() {
                     if !self.check_value_at_index(
                         expected_topic_value,
@@ -155,6 +157,17 @@ pub trait FilterMapsReader: Send + Sync {
         Ok(log_indices)
     }
 
+    /// Retrieves all potential matches for a given address value within a specific filter map.
+    ///
+    /// # Arguments
+    ///
+    /// * `map_index` - The index of the filter map to search.
+    /// * `address_value` - The address value (as a B256 hash) to match against.
+    /// * `params` - The filter map parameters.
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of log value indices that potentially match the given address value in the specified map.
     fn get_potential_matches_in_map(
         &self,
         map_index: u64,
@@ -165,6 +178,17 @@ pub trait FilterMapsReader: Send + Sync {
         params.potential_matches(&rows, map_index, address_value)
     }
 
+    /// Checks if a specific log value exists at the expected log value index within the filter maps.
+    ///
+    /// # Arguments
+    ///
+    /// * `log_value` - The log value (as a B256 hash) to check for.
+    /// * `expected_log_value_index` - The expected index of the log value.
+    /// * `params` - The filter map parameters.
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if the log value exists at the expected index, otherwise `false`.
     fn check_value_at_index(
         &self,
         log_value: &B256,
@@ -177,13 +201,23 @@ pub trait FilterMapsReader: Send + Sync {
         Ok(matches.contains(&expected_log_value_index))
     }
 
+    /// Retrieves all rows from a filter map that could potentially contain a given log value.
+    ///
+    /// # Arguments
+    ///
+    /// * `map_index` - The index of the filter map to search.
+    /// * `log_value` - The log value (as a B256 hash) to search for.
+    /// * `params` - The filter map parameters.
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of `FilterMapRow` objects that potentially contain the given log value.
     fn get_filter_map_rows(
         &self,
         map_index: u64,
         log_value: &B256,
         params: &FilterMapParams,
     ) -> FilterResult<Vec<FilterMapRow>> {
-        // TODO: Clean this up.
         let mut rows = Vec::new();
 
         for layer_index in 0..MAX_LAYERS {

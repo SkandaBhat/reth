@@ -203,7 +203,7 @@ impl FilterMapAccumulator {
 
     /// Checks if the current map should be finalized.
     pub const fn should_finalize(&self) -> bool {
-        self.log_value_index
-            >= (self.current_map.index as u64 + 1) << self.params.log_values_per_map
+        self.log_value_index >=
+            (self.current_map.index as u64 + 1) << self.params.log_values_per_map
     }
 }

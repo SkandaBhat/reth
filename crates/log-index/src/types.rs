@@ -20,22 +20,31 @@ pub type MapIndex = u64;
 /// A single row entry with its index in a filter map.
 pub type FilterMapRowEntry = (RowIndex, FilterMapRow);
 
+/// Metadata for tracking the state of log indexing and filter map generation.
+///
+/// This struct maintains information about which blocks have been indexed and which filter maps
+/// have been generated. It is used to track progress and enable resuming of the indexing process.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, Copy)]
 #[cfg_attr(feature = "reth-codecs", derive(Compact))]
 pub struct FilterMapMetadata {
-    /// First block that has complete log index
+    /// The first block number that has had its logs fully indexed.
+    /// This represents the starting point of our complete log index.
     pub first_indexed_block: BlockNumber,
 
-    /// Last block that has complete log index  
+    /// The last block number that has had its logs fully indexed.
+    /// This represents how far the log indexing has progressed.
     pub last_indexed_block: BlockNumber,
 
-    /// First complete filter map index
+    /// The index of the first complete filter map that has been generated.
+    /// Filter maps before this index may be incomplete or missing.
     pub first_map_index: u64,
 
-    /// Last complete filter map index
+    /// The index of the last complete filter map that has been generated.
+    /// This tracks how many filter maps have been fully constructed.
     pub last_map_index: u64,
 
-    /// Next log value index to process (for resuming)
+    /// The next log value index that needs to be processed.
+    /// Used to resume log indexing from where it left off previously.
     pub next_log_value_index: u64,
 }
 

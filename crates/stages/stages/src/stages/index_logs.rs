@@ -9,7 +9,6 @@ use reth_log_index::{
     extract_log_values_from_block, FilterMapAccumulator, FilterMapMetadata, FilterMapParams,
     FilterMapsReader, FilterMapsWriter,
 };
-use reth_primitives_traits::Block;
 use reth_provider::{BlockReader, DBProvider, ReceiptProvider};
 use reth_stages_api::{
     ExecInput, ExecOutput, Stage, StageCheckpoint, StageError, StageId, UnwindInput, UnwindOutput,
@@ -94,8 +93,6 @@ where
             let (block_range, is_final_range) =
                 input.next_block_range_with_threshold(self.commit_threshold);
 
-            let end_block = *block_range.end();
-
             info!(
                 target: "sync::stages::index_logs",
                 ?block_range,
@@ -117,6 +114,27 @@ where
                     .add_block(block_delimiter, log_values)
                     .map_err(|e| StageError::Fatal(Box::new(e)))?;
             }
+            // store completed maps, along with block log value indices and metadata
+            for completed_map in accumulator.drain_completed_maps() {
+                // store filter map rows
+                for (map_row_index, row) in completed_map.rows {
+                    provider
+                        .store_filter_map_row(map_row_index, row)
+                        .map_err(|e| StageError::Fatal(Box::new(e)))?;
+                }
+
+                // store block log value indices
+                for (block_number, log_value_index) in completed_map.block_log_value_indices {
+                    provider
+                        .store_log_value_index_for_block(block_number, log_value_index)
+                        .map_err(|e| StageError::Fatal(Box::new(e)))?;
+                }
+
+                // store metadata
+                provider
+                    .store_metadata(accumulator.metadata.clone())
+                    .map_err(|e| StageError::Fatal(Box::new(e)))?;
+            }
 
             info!(
                 target: "sync::stages::index_logs",
@@ -130,40 +148,9 @@ where
                 "Processed block range"
             );
 
-            input.checkpoint = Some(StageCheckpoint::new(end_block));
+            input.checkpoint = Some(StageCheckpoint::new(accumulator.metadata.last_indexed_block));
 
             if is_final_range {
-                // store completed maps, along with block log value indices and metadata
-                for completed_map in accumulator.drain_completed_maps() {
-                    let rows = completed_map.rows.clone();
-                    let block_log_value_indices = completed_map.block_log_value_indices.clone();
-                    for (map_row_index, row) in rows {
-                        provider
-                            .store_filter_map_row(map_row_index, row)
-                            .map_err(|e| StageError::Fatal(Box::new(e)))?;
-                    }
-
-                    for (block_number, log_value_index) in block_log_value_indices {
-                        provider
-                            .store_log_value_index_for_block(block_number, log_value_index)
-                            .map_err(|e| StageError::Fatal(Box::new(e)))?;
-                    }
-                }
-                info!(
-                    target: "sync::stages::index_logs",
-                    "Storing completed maps"
-                );
-
-                let metadata = accumulator.metadata.clone();
-
-                info!(
-                    target: "sync::stages::index_logs",
-                    ?metadata,
-                    "Storing metadata"
-                );
-
-                provider.store_metadata(metadata).map_err(|e| StageError::Fatal(Box::new(e)))?;
-
                 info!(
                     target: "sync::stages::index_logs",
                     "Done processing block range"
@@ -205,22 +192,34 @@ where
         provider.tx_ref().unwind_table_by_num::<tables::BlockLogIndices>(unwind_to)?;
 
         // find the log value index for the unwind_to block
-        let log_value_index = provider
+        let unwind_log_value_index = provider
             .get_log_value_index_for_block(unwind_to)
             .map_err(|e| StageError::Fatal(Box::new(e)))?
             .unwrap_or(0);
 
-        let unwind_map_index = log_value_index >> self.params.log_values_per_map;
+        let unwind_map_index = unwind_log_value_index >> self.params.log_values_per_map;
 
-        // TODO: revisit this, not sure if this is correct
-        provider.tx_ref().unwind_table::<tables::LogFilterRows, _>(
-            unwind_map_index.saturating_sub(1),
-            |global_row_index| global_row_index / self.params.map_height(),
-        )?;
+        let maps_to_keep = unwind_map_index.saturating_sub(1);
+
+        // get the first log value index for the map at unwind_map_index
+        let map_first_log_value_index = unwind_map_index << self.params.log_values_per_map;
+        let (map_first_block_number, _) = provider
+            .find_block_for_log_value_index(map_first_log_value_index)
+            .map_err(|e| StageError::Fatal(Box::new(e)))?
+            .unwrap_or((0, 0));
+
+        let last_indexed_block = map_first_block_number.saturating_sub(1);
+
+        // Delete all rows from maps > maps_to_keep
+        provider
+            .tx_ref()
+            .unwind_table::<tables::LogFilterRows, _>(maps_to_keep, |global_row_index| {
+                global_row_index / self.params.map_height()
+            })?;
 
         let new_metadata = FilterMapMetadata {
             first_indexed_block: metadata.first_indexed_block,
-            last_indexed_block: unwind_to,
+            last_indexed_block,
             first_map_index: metadata.first_map_index,
             last_map_index: unwind_map_index.saturating_sub(1),
             next_log_value_index: unwind_map_index << self.params.log_values_per_map,
@@ -239,14 +238,11 @@ mod tests {
         stage_test_suite_ext, ExecuteStageTestRunner, StageTestRunner, StorageKind,
         TestRunnerError, TestStageDB, UnwindStageTestRunner,
     };
-    use alloy_consensus::BlockHeader;
-    use alloy_primitives::{logs_bloom, BlockNumber, Log};
     use assert_matches::assert_matches;
-    use reth_ethereum_primitives::Receipt;
     use reth_primitives_traits::SealedBlock;
-    use reth_provider::providers::StaticFileWriter;
+    use reth_provider::StaticFileWriter;
     use reth_testing_utils::generators::{
-        self, random_block_range, random_log, random_receipt, BlockRangeParams,
+        self, random_block_range, random_receipt, BlockRangeParams,
     };
 
     // Implement stage test suite.
@@ -271,7 +267,7 @@ mod tests {
             1..=previous_stage,
             BlockRangeParams { tx_count: 2..3, ..Default::default() },
         );
-        runner.db.insert_blocks(blocks.iter(), StorageKind::Database(None)).expect("insert blocks");
+        runner.db.insert_blocks(blocks.iter(), StorageKind::Static).expect("insert blocks");
 
         let mut receipts = Vec::new();
         for block in &blocks {

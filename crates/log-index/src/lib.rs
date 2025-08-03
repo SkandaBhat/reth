@@ -16,8 +16,11 @@
 //! ## Usage
 //!
 //! ```rust
-//! use reth_log_index::{LogIndexAccumulator, LogIndexParams, extract_log_values_from_block};
-//! use reth_log_index::storage::{LogIndexReader, LogIndexWriter};
+//! use reth_log_index::{
+//!     extract_log_values_from_block,
+//!     storage::{LogIndexReader, LogIndexWriter},
+//!     LogIndexAccumulator, LogIndexParams,
+//! };
 //!
 //! // Create an accumulator
 //! let params = LogIndexParams::default();
@@ -29,7 +32,7 @@
 //!     block_number,
 //!     block_hash,
 //!     parent_hash,
-//!     receipts
+//!     receipts,
 //! );
 //!
 //! // Process log values

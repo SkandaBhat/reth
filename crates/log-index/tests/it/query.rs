@@ -40,10 +40,12 @@ pub fn get_log_at_index(
                 return Ok(None);
             }
 
-            // increment the current log value index by the number of log values in this log and check the next log
+            // increment the current log value index by the number of log values in this log and
+            // check the next log
             current_log_value_index += log_value_count;
         }
     }
+    println!("log index not found in this block: {:?}", log_index);
 
     // Log index not found in this block (shouldn't happen if index is correct)
     Ok(None)
