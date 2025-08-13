@@ -39,9 +39,9 @@
 use crate::{
     stages::{
         AccountHashingStage, BodyStage, EraImportSource, EraStage, ExecutionStage, FinishStage,
-        HeaderStage, IndexAccountHistoryStage, IndexStorageHistoryStage, MerkleStage,
-        PruneSenderRecoveryStage, PruneStage, SenderRecoveryStage, StorageHashingStage,
-        TransactionLookupStage,
+        HeaderStage, IndexAccountHistoryStage, IndexLogsStage, IndexStorageHistoryStage,
+        MerkleStage, PruneSenderRecoveryStage, PruneStage, SenderRecoveryStage,
+        StorageHashingStage, TransactionLookupStage,
     },
     StageSet, StageSetBuilder,
 };
@@ -49,6 +49,7 @@ use alloy_primitives::B256;
 use reth_config::config::StageConfig;
 use reth_consensus::{ConsensusError, FullConsensus};
 use reth_evm::ConfigureEvm;
+use reth_log_index::FilterMapParams;
 use reth_network_p2p::{bodies::downloader::BodyDownloader, headers::downloader::HeaderDownloader};
 use reth_primitives_traits::{Block, NodePrimitives};
 use reth_provider::HeaderSyncGapProvider;
@@ -433,6 +434,7 @@ where
     TransactionLookupStage: Stage<Provider>,
     IndexStorageHistoryStage: Stage<Provider>,
     IndexAccountHistoryStage: Stage<Provider>,
+    IndexLogsStage: Stage<Provider>,
 {
     fn builder(self) -> StageSetBuilder<Provider> {
         StageSetBuilder::default()
@@ -440,6 +442,10 @@ where
                 self.stages_config.transaction_lookup,
                 self.stages_config.etl.clone(),
                 self.prune_modes.transaction_lookup,
+            ))
+            .add_stage(IndexLogsStage::new(
+                self.stages_config.index_logs,
+                Arc::new(FilterMapParams::default()),
             ))
             .add_stage(IndexStorageHistoryStage::new(
                 self.stages_config.index_storage_history,
