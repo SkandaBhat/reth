@@ -148,7 +148,7 @@ where
                 "Processed block range"
             );
 
-            input.checkpoint = Some(StageCheckpoint::new(accumulator.metadata.last_indexed_block));
+            input.checkpoint = Some(StageCheckpoint::new(*block_range.end()));
 
             if is_final_range {
                 info!(

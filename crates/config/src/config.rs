@@ -424,7 +424,7 @@ pub struct IndexLogsConfig {
 
 impl Default for IndexLogsConfig {
     fn default() -> Self {
-        Self { commit_threshold: 1000 }
+        Self { commit_threshold: 100_000 }
     }
 }
 

@@ -36,7 +36,6 @@ pub fn get_log_at_index(
             if log_index == current_log_value_index {
                 return Ok(Some(log));
             } else if log_index < current_log_value_index {
-                println!("we walked past the log! this shouldnt happen log_index: {:?}, current_log_value_index: {:?}", log_index, current_log_value_index);
                 return Ok(None);
             }
 
@@ -45,7 +44,6 @@ pub fn get_log_at_index(
             current_log_value_index += log_value_count;
         }
     }
-    println!("log index not found in this block: {:?}", log_index);
 
     // Log index not found in this block (shouldn't happen if index is correct)
     Ok(None)
