@@ -59,6 +59,12 @@ pub struct FilterMapRow {
     pub columns: Vec<u64>,
 }
 
+impl FilterMapRow {
+    pub fn is_empty(&self) -> bool {
+        self.columns.is_empty()
+    }
+}
+
 /// Metadata for a block delimiter in the log value sequence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockDelimiter {

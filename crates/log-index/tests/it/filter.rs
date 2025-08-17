@@ -45,12 +45,9 @@ pub async fn get_logs_in_block_range(
     to_block: u64,
     force_bloom: bool,
 ) -> FilterResult<Vec<Log>> {
-    let address: Address = *filter.address.to_value_or_array().unwrap().as_value().unwrap();
-    let topics: Vec<B256> = filter
-        .topics
-        .iter()
-        .map(|topic| *topic.to_value_or_array().unwrap().as_value().unwrap())
-        .collect();
+    let addresses: Vec<Address> = filter.address.iter().copied().collect();
+    let topics: Vec<Vec<B256>> =
+        filter.topics.iter().map(|t| t.iter().copied().collect()).collect();
 
     if force_bloom {
         return get_logs_in_block_range_bloom(provider, &filter, from_block, to_block).await;
@@ -89,7 +86,7 @@ pub async fn get_logs_in_block_range(
 
     // Fetch from index (if available)
     let index_future = if let Some(range) = indexed_range {
-        Some(tokio::spawn(get_logs_from_indexed_range(provider.clone(), range, address, topics)))
+        Some(tokio::spawn(get_logs_from_indexed_range(provider.clone(), range, addresses, topics)))
     } else {
         None
     };
@@ -142,20 +139,23 @@ pub async fn get_logs_in_block_range(
 async fn get_logs_from_indexed_range(
     provider: Arc<InMemoryFilterMapsProvider>,
     index_range: RangeInclusive<u64>,
-    address: Address,
-    topics: Vec<B256>,
+    addresses: Vec<Address>,
+    topics: Vec<Vec<B256>>,
 ) -> FilterResult<Vec<Log>> {
     let mut logs = Vec::new();
 
-    let log_indices = provider.query_logs(index_range, address, topics)?;
+    let map_indices = provider.get_map_indices_for_block_range(index_range.clone())?;
+    let log_indices = provider.query_logs(map_indices, addresses.clone(), topics)?;
+
+    let metadata = provider.get_metadata()?.unwrap();
 
     for log_index in log_indices {
-        let log = get_log_at_index(provider.clone(), log_index);
+        let log = get_log_at_index(provider.clone(), metadata, log_index, None);
         if let Ok(Some(log)) = log {
-            if log.address == address {
+            if addresses.contains(&log.address) {
                 logs.push(log);
             } else {
-                println!("log address mismatch: {:?}, {:?}", log.address, address);
+                println!("log address mismatch: {:?}, {:?}", log.address, addresses);
             }
         }
     }

@@ -40,6 +40,7 @@ use reth_db_api::{
     models::StoredBlockBodyIndices,
 };
 use reth_errors::{ProviderError, ProviderResult};
+use reth_log_index::{FilterError, FilterMapMetadata, FilterMapRow, FilterMapsReader};
 use reth_node_types::{
     Block, BlockBody, BlockTy, HeaderTy, NodeTypes, PrimitivesTy, ReceiptTy, TxTy,
 };
@@ -620,6 +621,31 @@ where
         _block_range: RangeInclusive<BlockNumber>,
     ) -> ProviderResult<Vec<Vec<Self::Receipt>>> {
         Err(ProviderError::UnsupportedProvider)
+    }
+}
+
+impl<P, Node, N> FilterMapsReader for RpcBlockchainProvider<P, Node, N>
+where
+    P: Provider<N> + Clone + 'static,
+    N: Network,
+    Node: NodeTypes,
+{
+    fn get_metadata(&self) -> Result<Option<FilterMapMetadata>, FilterError> {
+        Err(FilterError::Database("Unsupported provider".to_string()))
+    }
+
+    fn get_log_value_index_for_block(
+        &self,
+        _block: BlockNumber,
+    ) -> Result<Option<u64>, FilterError> {
+        Err(FilterError::Database("Unsupported provider".to_string()))
+    }
+
+    fn get_filter_map_rows(
+        &self,
+        _global_row_indices: Vec<u64>,
+    ) -> Result<Option<HashMap<u64, FilterMapRow>>, FilterError> {
+        Err(FilterError::Database("Unsupported provider".to_string()))
     }
 }
 
@@ -1533,6 +1559,31 @@ where
         _range: RangeInclusive<BlockNumber>,
     ) -> Result<Vec<RecoveredBlock<Self::Block>>, ProviderError> {
         Err(ProviderError::UnsupportedProvider)
+    }
+}
+
+impl<P, Node, N> FilterMapsReader for RpcBlockchainStateProvider<P, Node, N>
+where
+    P: Provider<N> + Clone + 'static,
+    N: Network,
+    Node: NodeTypes,
+{
+    fn get_metadata(&self) -> Result<Option<FilterMapMetadata>, FilterError> {
+        Err(FilterError::Database("Unsupported provider".to_string()))
+    }
+
+    fn get_log_value_index_for_block(
+        &self,
+        block: BlockNumber,
+    ) -> Result<Option<u64>, FilterError> {
+        Err(FilterError::Database("Unsupported provider".to_string()))
+    }
+
+    fn get_filter_map_rows(
+        &self,
+        _global_row_indices: Vec<u64>,
+    ) -> Result<Option<HashMap<u64, FilterMapRow>>, FilterError> {
+        Err(FilterError::Database("Unsupported provider".to_string()))
     }
 }
 

@@ -1,16 +1,19 @@
 use alloy_primitives::Log;
 use alloy_rpc_types_eth::BlockHashOrNumber;
-use reth_log_index::{FilterMapsReader, FilterResult};
+use reth_log_index::{FilterMapMetadata, FilterMapsReader, FilterResult};
 use reth_provider::ReceiptProvider;
-use std::sync::Arc;
+use std::{ops::RangeInclusive, sync::Arc};
 
 use crate::storage::InMemoryFilterMapsProvider;
 
 pub fn get_log_at_index(
     provider: Arc<InMemoryFilterMapsProvider>,
+    metadata: FilterMapMetadata,
     log_index: u64,
+    range: Option<RangeInclusive<u64>>,
 ) -> FilterResult<Option<Log>> {
-    let block_log_value_index = provider.find_block_for_log_value_index(log_index)?;
+    let block_log_value_index =
+        provider.find_block_for_log_value_index(metadata, log_index, range)?;
     if block_log_value_index.is_none() {
         return Ok(None); // No block contains this log index
     }

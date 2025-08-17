@@ -14,7 +14,9 @@ use alloy_eips::{
     eip4895::{Withdrawal, Withdrawals},
     BlockHashOrNumber, BlockId, BlockNumHash, BlockNumberOrTag,
 };
-use alloy_primitives::{Address, BlockHash, BlockNumber, Sealable, TxHash, TxNumber, B256, U256};
+use alloy_primitives::{
+    map::HashMap, Address, BlockHash, BlockNumber, Sealable, TxHash, TxNumber, B256, U256,
+};
 use alloy_rpc_types_engine::ForkchoiceState;
 use reth_chain_state::{
     BlockState, CanonicalInMemoryState, ForkChoiceNotifications, ForkChoiceSubscriptions,
@@ -29,6 +31,7 @@ use reth_db_api::{
 use reth_ethereum_primitives::{Block, EthPrimitives, Receipt, TransactionSigned};
 use reth_evm::{ConfigureEvm, EvmEnv};
 use reth_execution_types::ExecutionOutcome;
+use reth_log_index::{FilterError, FilterMapMetadata, FilterMapRow, FilterMapsReader};
 use reth_node_types::{BlockTy, HeaderTy, NodeTypesWithDB, ReceiptTy, TxTy};
 use reth_primitives_traits::{
     Account, BlockBody, NodePrimitives, RecoveredBlock, SealedBlock, SealedHeader, StorageEntry,
@@ -738,6 +741,26 @@ impl<N: ProviderNodeTypes> StateReader for BlockchainProvider<N> {
         block: BlockNumber,
     ) -> ProviderResult<Option<ExecutionOutcome<Self::Receipt>>> {
         StateReader::get_state(&self.consistent_provider()?, block)
+    }
+}
+
+impl<N: ProviderNodeTypes> FilterMapsReader for BlockchainProvider<N> {
+    fn get_metadata(&self) -> Result<Option<FilterMapMetadata>, FilterError> {
+        self.consistent_provider()?.get_metadata()
+    }
+
+    fn get_log_value_index_for_block(
+        &self,
+        block: BlockNumber,
+    ) -> Result<Option<u64>, FilterError> {
+        self.consistent_provider()?.get_log_value_index_for_block(block)
+    }
+
+    fn get_filter_map_rows(
+        &self,
+        global_row_indices: Vec<u64>,
+    ) -> Result<Option<HashMap<u64, FilterMapRow>>, FilterError> {
+        self.consistent_provider()?.get_filter_map_rows(global_row_indices)
     }
 }
 

@@ -35,10 +35,15 @@ impl FilterMapsReader for InMemoryFilterMapsProvider {
         Ok(self.storage.metadata.lock().unwrap().clone())
     }
 
-    fn get_filter_map_row(&self, global_row_index: u64) -> FilterResult<Option<FilterMapRow>> {
+    fn get_filter_map_rows(
+        &self,
+        global_row_indices: Vec<u64>,
+    ) -> FilterResult<Option<HashMap<u64, FilterMapRow>>> {
         let rows = self.storage.filter_rows.lock().unwrap();
 
-        Ok(rows.get(&global_row_index).cloned())
+        Ok(Some(
+            global_row_indices.iter().map(|index| rows.get(index).cloned()).flatten().collect(),
+        ))
     }
 
     fn get_log_value_index_for_block(&self, block: BlockNumber) -> FilterResult<Option<u64>> {

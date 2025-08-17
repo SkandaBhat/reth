@@ -204,7 +204,7 @@ where
         // get the first log value index for the map at unwind_map_index
         let map_first_log_value_index = unwind_map_index << self.params.log_values_per_map;
         let (map_first_block_number, _) = provider
-            .find_block_for_log_value_index(map_first_log_value_index)
+            .find_block_for_log_value_index(metadata, map_first_log_value_index, None)
             .map_err(|e| StageError::Fatal(Box::new(e)))?
             .unwrap_or((0, 0));
 

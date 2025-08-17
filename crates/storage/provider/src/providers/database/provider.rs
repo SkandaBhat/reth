@@ -3180,10 +3180,26 @@ impl<TX: DbTx + 'static, N: NodeTypes> FilterMapsReader for DatabaseProvider<TX,
             .map_err(|e| FilterError::Database(e.to_string()))
     }
 
-    fn get_filter_map_row(&self, global_row_index: u64) -> FilterResult<Option<FilterMapRow>> {
-        self.tx
-            .get::<tables::LogFilterRows>(global_row_index)
-            .map_err(|e| FilterError::Database(e.to_string()))
+    fn get_filter_map_rows(
+        &self,
+        global_row_indices: Vec<u64>,
+    ) -> FilterResult<Option<HashMap<u64, FilterMapRow>>> {
+        let mut rows = HashMap::default();
+        let mut cursor = self
+            .tx
+            .cursor_read::<tables::LogFilterRows>()
+            .map_err(|e| FilterError::Database(e.to_string()))?;
+        for global_row_index in global_row_indices {
+            let row = cursor
+                .seek_exact(global_row_index)
+                .map_err(|e| FilterError::Database(e.to_string()))?;
+            if let Some((_, row)) = row {
+                if !row.is_empty() {
+                    rows.insert(global_row_index, row);
+                }
+            }
+        }
+        Ok(Some(rows))
     }
 
     fn get_log_value_index_for_block(&self, block: BlockNumber) -> FilterResult<Option<u64>> {

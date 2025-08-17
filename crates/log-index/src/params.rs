@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use std::hash::Hasher;
 
 use crate::{
-    constants::{DEFAULT_PARAMS, EXPECTED_MATCHES, RANGE_TEST_PARAMS},
+    constants::{DEFAULT_PARAMS, EXPECTED_MATCHES, MAX_LAYERS, RANGE_TEST_PARAMS},
     types::{FilterError, FilterMapRow, MapRowIndex},
 };
 
@@ -223,6 +223,17 @@ impl FilterMapParams {
         results.sort_unstable();
         results.dedup();
         Ok(results)
+    }
+
+    /// Returns the global row indices for the given map index and log value.
+    pub fn global_row_indices(&self, map_index: u64, log_value: &B256) -> Vec<MapRowIndex> {
+        let mut indices = Vec::new();
+        for layer in 0..MAX_LAYERS {
+            let row_index = self.row_index(map_index, layer, log_value);
+            let global_row_index = self.global_row_index(map_index, row_index);
+            indices.push(global_row_index);
+        }
+        indices
     }
 
     /// Calculate the global row index for database storage.

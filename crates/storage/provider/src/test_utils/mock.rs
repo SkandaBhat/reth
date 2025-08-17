@@ -1044,11 +1044,11 @@ impl<T: NodePrimitives, ChainSpec: Send + Sync> FilterMapsReader for MockEthProv
         Ok(self.filter_maps_metadata.lock().clone())
     }
 
-    fn get_filter_map_row(
+    fn get_filter_map_rows(
         &self,
-        global_row_index: u64,
-    ) -> Result<Option<FilterMapRow>, FilterError> {
-        Ok(self.filter_map_rows.lock().get(&global_row_index).cloned())
+        global_row_indices: Vec<u64>,
+    ) -> Result<Option<HashMap<u64, FilterMapRow>>, FilterError> {
+        Ok(None)
     }
 
     fn get_log_value_index_for_block(
