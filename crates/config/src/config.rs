@@ -125,6 +125,8 @@ pub struct StageConfig {
     pub index_account_history: IndexHistoryConfig,
     /// Index Storage History stage configuration.
     pub index_storage_history: IndexHistoryConfig,
+    /// Index Logs stage configuration.
+    pub index_logs: IndexLogsConfig,
     /// Common ETL related configuration.
     pub etl: EtlConfig,
 }
@@ -408,6 +410,21 @@ impl EtlConfig {
     pub const fn default_file_size() -> usize {
         // 500 MB
         500 * (1024 * 1024)
+    }
+}
+
+/// Index Logs stage configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(default))]
+pub struct IndexLogsConfig {
+    /// The maximum number of blocks to process before committing progress to the database.
+    pub commit_threshold: u64,
+}
+
+impl Default for IndexLogsConfig {
+    fn default() -> Self {
+        Self { commit_threshold: 100_000 }
     }
 }
 

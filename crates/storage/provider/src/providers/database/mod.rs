@@ -9,12 +9,15 @@ use crate::{
 };
 use alloy_consensus::transaction::TransactionMeta;
 use alloy_eips::BlockHashOrNumber;
-use alloy_primitives::{Address, BlockHash, BlockNumber, TxHash, TxNumber, B256, U256};
+use alloy_primitives::{
+    map::HashMap, Address, BlockHash, BlockNumber, TxHash, TxNumber, B256, U256,
+};
 use core::fmt;
 use reth_chainspec::ChainInfo;
 use reth_db::{init_db, mdbx::DatabaseArguments, DatabaseEnv};
 use reth_db_api::{database::Database, models::StoredBlockBodyIndices};
 use reth_errors::{RethError, RethResult};
+use reth_log_index::{FilterError, FilterMapMetadata, FilterMapRow, FilterMapsReader};
 use reth_node_types::{
     BlockTy, HeaderTy, NodeTypes, NodeTypesWithDB, NodeTypesWithDBAdapter, ReceiptTy, TxTy,
 };
@@ -561,6 +564,26 @@ impl<N: ProviderNodeTypes> StageCheckpointReader for ProviderFactory<N> {
     }
     fn get_all_checkpoints(&self) -> ProviderResult<Vec<(String, StageCheckpoint)>> {
         self.provider()?.get_all_checkpoints()
+    }
+}
+
+impl<N: ProviderNodeTypes> FilterMapsReader for ProviderFactory<N> {
+    fn get_metadata(&self) -> Result<Option<FilterMapMetadata>, FilterError> {
+        self.provider()?.get_metadata()
+    }
+
+    fn get_filter_map_rows(
+        &self,
+        global_row_indices: Vec<u64>,
+    ) -> Result<Option<HashMap<u64, FilterMapRow>>, FilterError> {
+        self.provider()?.get_filter_map_rows(global_row_indices)
+    }
+
+    fn get_log_value_index_for_block(
+        &self,
+        block: BlockNumber,
+    ) -> Result<Option<u64>, FilterError> {
+        self.provider()?.get_log_value_index_for_block(block)
     }
 }
 
