@@ -1,23 +1,18 @@
 use alloy_primitives::Log;
 use alloy_rpc_types_eth::BlockHashOrNumber;
-use reth_log_index::{FilterMapMetadata, FilterMapsReader, FilterResult};
+use reth_log_index::{query::FilterMapQueryResult, FilterResult};
 use reth_provider::ReceiptProvider;
-use std::{ops::RangeInclusive, sync::Arc};
+use std::sync::Arc;
 
 use crate::storage::InMemoryFilterMapsProvider;
 
-pub fn get_log_at_index(
+pub fn fetch_logs_from_index_result(
     provider: Arc<InMemoryFilterMapsProvider>,
-    metadata: FilterMapMetadata,
-    log_index: u64,
-    range: Option<RangeInclusive<u64>>,
+    result: FilterMapQueryResult,
 ) -> FilterResult<Option<Log>> {
-    let block_log_value_index =
-        provider.find_block_for_log_value_index(metadata, log_index, range)?;
-    if block_log_value_index.is_none() {
-        return Ok(None); // No block contains this log index
-    }
-    let (block_number, block_start_log_value_index) = block_log_value_index.unwrap();
+    let log_index = result.log_index;
+    let block_number = result.block_number;
+    let block_start_log_value_index = result.block_start_lv_index;
 
     // Get receipts for the block
     let receipts = provider
@@ -25,8 +20,7 @@ pub fn get_log_at_index(
         .receipts_by_block(BlockHashOrNumber::Number(block_number))?
         .unwrap_or_default();
 
-    let mut current_log_value_index = block_start_log_value_index + 1;
-
+    let mut current_log_value_index = block_start_log_value_index;
     // Iterate through all logs in the block to find the one at log_index
     for receipt in receipts {
         for log in receipt.logs {

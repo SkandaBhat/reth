@@ -9,15 +9,13 @@ use crate::{
 };
 use alloy_consensus::transaction::TransactionMeta;
 use alloy_eips::BlockHashOrNumber;
-use alloy_primitives::{
-    map::HashMap, Address, BlockHash, BlockNumber, TxHash, TxNumber, B256, U256,
-};
+use alloy_primitives::{Address, BlockHash, BlockNumber, TxHash, TxNumber, B256, U256};
 use core::fmt;
 use reth_chainspec::ChainInfo;
 use reth_db::{init_db, mdbx::DatabaseArguments, DatabaseEnv};
 use reth_db_api::{database::Database, models::StoredBlockBodyIndices};
 use reth_errors::{RethError, RethResult};
-use reth_log_index::{FilterError, FilterMapMetadata, FilterMapRow, FilterMapsReader};
+use reth_log_index::{FilterError, FilterMapMeta, FilterMapsReader};
 use reth_node_types::{
     BlockTy, HeaderTy, NodeTypes, NodeTypesWithDB, NodeTypesWithDBAdapter, ReceiptTy, TxTy,
 };
@@ -567,25 +565,31 @@ impl<N: ProviderNodeTypes> StageCheckpointReader for ProviderFactory<N> {
     }
 }
 
-impl<N: ProviderNodeTypes> FilterMapsReader for ProviderFactory<N> {
-    fn get_metadata(&self) -> Result<Option<FilterMapMetadata>, FilterError> {
-        self.provider()?.get_metadata()
-    }
+// impl<N: ProviderNodeTypes> FilterMapsReader for ProviderFactory<N> {
+//     fn get_metadata(&self) -> Result<Option<FilterMapMetadata>, FilterError> {
+//         self.provider()?.get_metadata()
+//     }
 
-    fn get_filter_map_rows(
-        &self,
-        global_row_indices: Vec<u64>,
-    ) -> Result<Option<HashMap<u64, FilterMapRow>>, FilterError> {
-        self.provider()?.get_filter_map_rows(global_row_indices)
-    }
+//     fn get_filter_map_rows(
+//         &self,
+//         from_block: BlockNumber,
+//         to_block: BlockNumber,
+//         values: &[&B256],
+//     ) -> Result<FilterMapRowsResult, FilterError> {
+//         self.provider()?.get_filter_map_rows(from_block, to_block, values)
+//     }
 
-    fn get_log_value_index_for_block(
-        &self,
-        block: BlockNumber,
-    ) -> Result<Option<u64>, FilterError> {
-        self.provider()?.get_log_value_index_for_block(block)
-    }
-}
+//     fn get_log_value_index_for_block(
+//         &self,
+//         block: BlockNumber,
+//     ) -> Result<Option<u64>, FilterError> {
+//         self.provider()?.get_log_value_index_for_block(block)
+//     }
+
+//     fn get_map_last_block(&self, map_index: u32) -> Result<LastBlockOfMap, FilterError> {
+//         self.provider()?.get_map_last_block(map_index)
+//     }
+// }
 
 impl<N: NodeTypesWithDB> ChainSpecProvider for ProviderFactory<N> {
     type ChainSpec = N::ChainSpec;

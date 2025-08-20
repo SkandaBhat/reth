@@ -40,7 +40,9 @@ use reth_db_api::{
     models::StoredBlockBodyIndices,
 };
 use reth_errors::{ProviderError, ProviderResult};
-use reth_log_index::{FilterError, FilterMapMetadata, FilterMapRow, FilterMapsReader};
+use reth_log_index::{
+    FilterError, FilterMapMeta, FilterMapRowsResult, FilterMapsReader, LastBlockOfMap,
+};
 use reth_node_types::{
     Block, BlockBody, BlockTy, HeaderTy, NodeTypes, PrimitivesTy, ReceiptTy, TxTy,
 };
@@ -624,30 +626,35 @@ where
     }
 }
 
-impl<P, Node, N> FilterMapsReader for RpcBlockchainProvider<P, Node, N>
-where
-    P: Provider<N> + Clone + 'static,
-    N: Network,
-    Node: NodeTypes,
-{
-    fn get_metadata(&self) -> Result<Option<FilterMapMetadata>, FilterError> {
-        Err(FilterError::Database("Unsupported provider".to_string()))
-    }
+// impl<P, Node, N> FilterMapsReader for RpcBlockchainProvider<P, Node, N>
+// where
+//     P: Provider<N> + Clone + 'static,
+//     N: Network,
+//     Node: NodeTypes,
+// {
+//     fn get_metadata(&self) -> Result<Option<FilterMapMetadata>, FilterError> {
+//         Err(FilterError::Database("Unsupported provider".to_string()))
+//     }
 
-    fn get_log_value_index_for_block(
-        &self,
-        _block: BlockNumber,
-    ) -> Result<Option<u64>, FilterError> {
-        Err(FilterError::Database("Unsupported provider".to_string()))
-    }
+//     fn get_log_value_index_for_block(
+//         &self,
+//         _block: BlockNumber,
+//     ) -> Result<Option<u64>, FilterError> {
+//         Err(FilterError::Database("Unsupported provider".to_string()))
+//     }
 
-    fn get_filter_map_rows(
-        &self,
-        _global_row_indices: Vec<u64>,
-    ) -> Result<Option<HashMap<u64, FilterMapRow>>, FilterError> {
-        Err(FilterError::Database("Unsupported provider".to_string()))
-    }
-}
+//     fn get_filter_map_rows(
+//         &self,
+//         _global_row_indices: &[u32],
+//         _values: &[&B256],
+//     ) -> Result<FilterMapRowsResult, FilterError> {
+//         Err(FilterError::Database("Unsupported provider".to_string()))
+//     }
+
+//     fn get_map_last_block(&self, _map_index: u32) -> Result<LastBlockOfMap, FilterError> {
+//         Err(FilterError::Database("Unsupported provider".to_string()))
+//     }
+// }
 
 impl<P, Node, N> ReceiptProviderIdExt for RpcBlockchainProvider<P, Node, N>
 where
@@ -1568,21 +1575,26 @@ where
     N: Network,
     Node: NodeTypes,
 {
-    fn get_metadata(&self) -> Result<Option<FilterMapMetadata>, FilterError> {
+    fn get_metadata(&self) -> Result<Option<FilterMapMeta>, FilterError> {
         Err(FilterError::Database("Unsupported provider".to_string()))
     }
 
     fn get_log_value_index_for_block(
         &self,
-        block: BlockNumber,
+        _block: BlockNumber,
     ) -> Result<Option<u64>, FilterError> {
         Err(FilterError::Database("Unsupported provider".to_string()))
     }
 
     fn get_filter_map_rows(
         &self,
-        _global_row_indices: Vec<u64>,
-    ) -> Result<Option<HashMap<u64, FilterMapRow>>, FilterError> {
+        _global_row_indices: &[u32],
+        _values: &[&B256],
+    ) -> Result<FilterMapRowsResult, FilterError> {
+        Err(FilterError::Database("Unsupported provider".to_string()))
+    }
+
+    fn get_map_last_block(&self, _map_index: u32) -> Result<LastBlockOfMap, FilterError> {
         Err(FilterError::Database("Unsupported provider".to_string()))
     }
 }

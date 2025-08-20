@@ -9,7 +9,6 @@ use alloy_genesis::GenesisAccount;
 use alloy_primitives::{Address, Bytes, Log, B256, U256};
 use reth_codecs::{add_arbitrary_tests, Compact};
 use reth_ethereum_primitives::{Receipt, TransactionSigned, TxType};
-use reth_log_index::{FilterMapMetadata, FilterMapRow};
 use reth_primitives_traits::{Account, Bytecode, StorageEntry};
 use reth_prune_types::{PruneCheckpoint, PruneSegment};
 use reth_stages_types::StageCheckpoint;
@@ -234,9 +233,6 @@ impl_compression_for_compact!(
     StageCheckpoint,
     PruneCheckpoint,
     ClientVersion,
-    // Filter maps types
-    FilterMapRow,
-    FilterMapMetadata,
     // Non-DB
     GenesisAccount
 );

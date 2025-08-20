@@ -29,7 +29,7 @@ use reth_db_api::mock::{DatabaseMock, TxMock};
 use reth_db_models::{AccountBeforeTx, StoredBlockBodyIndices};
 use reth_ethereum_primitives::EthPrimitives;
 use reth_execution_types::ExecutionOutcome;
-use reth_log_index::{FilterError, FilterMapMetadata, FilterMapRow, FilterMapsReader};
+use reth_log_index::{FilterError, FilterMapMeta, FilterMapsReader};
 use reth_primitives_traits::{Account, Bytecode, NodePrimitives, RecoveredBlock, SealedHeader};
 #[cfg(feature = "db-api")]
 use reth_prune_types::PruneModes;
@@ -243,25 +243,31 @@ impl<C: Send + Sync, N: NodePrimitives> BlockReader for NoopProvider<C, N> {
     }
 }
 
-impl<C: Send + Sync, N: NodePrimitives> FilterMapsReader for NoopProvider<C, N> {
-    fn get_metadata(&self) -> Result<Option<FilterMapMetadata>, FilterError> {
-        Ok(None)
-    }
+// impl<C: Send + Sync, N: NodePrimitives> FilterMapsReader for NoopProvider<C, N> {
+//     fn get_metadata(&self) -> Result<Option<FilterMapMetadata>, FilterError> {
+//         Ok(None)
+//     }
 
-    fn get_filter_map_rows(
-        &self,
-        _global_row_indices: Vec<u64>,
-    ) -> Result<Option<HashMap<u64, FilterMapRow>>, FilterError> {
-        Ok(None)
-    }
+//     fn get_filter_map_rows(
+//         &self,
+//         _from_block: BlockNumber,
+//         _to_block: BlockNumber,
+//         _values: &[&B256],
+//     ) -> Result<FilterMapRowsResult, FilterError> {
+//         Ok(FilterMapRowsResult::empty())
+//     }
 
-    fn get_log_value_index_for_block(
-        &self,
-        _block_number: BlockNumber,
-    ) -> Result<Option<u64>, FilterError> {
-        Ok(None)
-    }
-}
+//     fn get_log_value_index_for_block(
+//         &self,
+//         _block_number: BlockNumber,
+//     ) -> Result<Option<u64>, FilterError> {
+//         Ok(None)
+//     }
+
+//     fn get_map_last_block(&self, _map_index: u32) -> Result<LastBlockOfMap, FilterError> {
+//         Ok(LastBlockOfMap::default())
+//     }
+// }
 
 impl<C: Send + Sync, N: NodePrimitives> TransactionsProvider for NoopProvider<C, N> {
     type Transaction = N::SignedTx;

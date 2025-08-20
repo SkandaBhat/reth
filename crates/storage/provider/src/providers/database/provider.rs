@@ -45,8 +45,7 @@ use reth_db_api::{
 };
 use reth_execution_types::{Chain, ExecutionOutcome};
 use reth_log_index::{
-    FilterError, FilterMapMetadata, FilterMapRow, FilterMapsReader, FilterMapsWriter, FilterResult,
-    MapRowIndex,
+    FilterError, FilterMapMeta, FilterMapsReader, FilterMapsWriter, FilterResult,
 };
 use reth_node_types::{BlockTy, BodyTy, HeaderTy, NodeTypes, ReceiptTy, TxTy};
 use reth_primitives_traits::{
@@ -3173,70 +3172,67 @@ impl<TX: DbTxMut, N: NodeTypes> ChainStateBlockWriter for DatabaseProvider<TX, N
     }
 }
 
-impl<TX: DbTx + 'static, N: NodeTypes> FilterMapsReader for DatabaseProvider<TX, N> {
-    fn get_metadata(&self) -> FilterResult<Option<FilterMapMetadata>> {
-        self.tx
-            .get::<tables::LogFilterMetadata>(tables::FilterMapMetadataKey::Metadata)
-            .map_err(|e| FilterError::Database(e.to_string()))
-    }
+// impl<TX: DbTx + 'static, N: NodeTypes> FilterMapsReader for DatabaseProvider<TX, N> {
+//     fn get_metadata(&self) -> FilterResult<Option<FilterMapMetadata>> {
+//         self.tx
+//             .get::<tables::LogFilterMetadata>(tables::FilterMapMetadataKey::Metadata)
+//             .map_err(|e| FilterError::Database(e.to_string()))
+//     }
 
-    fn get_filter_map_rows(
-        &self,
-        global_row_indices: Vec<u64>,
-    ) -> FilterResult<Option<HashMap<u64, FilterMapRow>>> {
-        let mut rows = HashMap::default();
-        let mut cursor = self
-            .tx
-            .cursor_read::<tables::LogFilterRows>()
-            .map_err(|e| FilterError::Database(e.to_string()))?;
-        for global_row_index in global_row_indices {
-            let row = cursor
-                .seek_exact(global_row_index)
-                .map_err(|e| FilterError::Database(e.to_string()))?;
-            if let Some((_, row)) = row {
-                if !row.is_empty() {
-                    rows.insert(global_row_index, row);
-                }
-            }
-        }
-        Ok(Some(rows))
-    }
+//     /// Reconstruct row-alternatives for each map by merging base row group + ext row tail
+//     /// for every row_index referenced by (value,layer) on this map.
+//     fn get_filter_map_rows(
+//         &self,
+//         from_block: BlockNumber,
+//         to_block: BlockNumber,
+//         values: &[&B256],
+//     ) -> FilterResult<FilterMapRowsResult> {
+//         todo!()
+//     }
 
-    fn get_log_value_index_for_block(&self, block: BlockNumber) -> FilterResult<Option<u64>> {
-        self.tx
-            .get::<tables::BlockLogIndices>(block)
-            .map_err(|e| FilterError::Database(e.to_string()))
-    }
-}
+//     fn get_log_value_index_for_block(&self, block: BlockNumber) -> FilterResult<Option<u64>> {
+//         self.tx
+//             .get::<tables::BlockLogIndices>(block)
+//             .map_err(|e| FilterError::Database(e.to_string()))
+//     }
 
-impl<TX: DbTxMut, N: NodeTypes> FilterMapsWriter for DatabaseProvider<TX, N> {
-    fn store_filter_map_row(
-        &self,
-        map_row_index: MapRowIndex,
-        row: FilterMapRow,
-    ) -> FilterResult<()> {
-        self.tx
-            .put::<tables::LogFilterRows>(map_row_index, row)
-            .map_err(|e| FilterError::Database(e.to_string()))?;
-        Ok(())
-    }
+//     fn get_map_last_block(&self, map_index: u32) -> FilterResult<LastBlockOfMap> {
+//         todo!()
+//     }
+// }
 
-    fn store_metadata(&self, metadata: FilterMapMetadata) -> FilterResult<()> {
-        self.tx
-            .put::<tables::LogFilterMetadata>(tables::FilterMapMetadataKey::Metadata, metadata)
-            .map_err(|e| FilterError::Database(e.to_string()))
-    }
+// impl<TX: DbTxMut + DbTx + 'static, N: NodeTypes> FilterMapsWriter for DatabaseProvider<TX, N> {
+//     /// Store row by splitting it into base (<= base_row_length) and ext tail, and writing into
+// the     /// base row group / ext row tables.
+//     fn store_filter_map_row(&self, map_row_index: u64, row: FilterMapRow) -> FilterResult<()> {
+//         todo!()
+//     }
 
-    fn store_log_value_index_for_block(
-        &self,
-        block: BlockNumber,
-        log_value_index: u64,
-    ) -> FilterResult<()> {
-        self.tx
-            .put::<tables::BlockLogIndices>(block, log_value_index)
-            .map_err(|e| FilterError::Database(e.to_string()))
-    }
-}
+//     fn store_metadata(&self, metadata: FilterMapMetadata) -> FilterResult<()> {
+//         self.tx
+//             .put::<tables::LogFilterMetadata>(tables::FilterMapMetadataKey::Metadata, metadata)
+//             .map_err(|e| FilterError::Database(e.to_string()))
+//     }
+
+//     fn store_log_value_index_for_block(
+//         &self,
+//         block: BlockNumber,
+//         log_value_index: u64,
+//     ) -> FilterResult<()> {
+//         self.tx
+//             .put::<tables::BlockLogIndices>(block, log_value_index)
+//             .map_err(|e| FilterError::Database(e.to_string()))
+//     }
+
+//     fn store_map_last_block(
+//         &self,
+//         map_index: u32,
+//         block_number: BlockNumber,
+//         block_hash: B256,
+//     ) -> FilterResult<()> {
+//         todo!()
+//     }
+// }
 
 impl<TX: DbTx + 'static, N: NodeTypes + 'static> DBProvider for DatabaseProvider<TX, N> {
     type Tx = TX;

@@ -31,7 +31,7 @@ use reth_db_api::{
 use reth_ethereum_primitives::{Block, EthPrimitives, Receipt, TransactionSigned};
 use reth_evm::{ConfigureEvm, EvmEnv};
 use reth_execution_types::ExecutionOutcome;
-use reth_log_index::{FilterError, FilterMapMetadata, FilterMapRow, FilterMapsReader};
+use reth_log_index::{FilterError, FilterMapMeta, FilterMapsReader};
 use reth_node_types::{BlockTy, HeaderTy, NodeTypesWithDB, ReceiptTy, TxTy};
 use reth_primitives_traits::{
     Account, BlockBody, NodePrimitives, RecoveredBlock, SealedBlock, SealedHeader, StorageEntry,
@@ -744,25 +744,31 @@ impl<N: ProviderNodeTypes> StateReader for BlockchainProvider<N> {
     }
 }
 
-impl<N: ProviderNodeTypes> FilterMapsReader for BlockchainProvider<N> {
-    fn get_metadata(&self) -> Result<Option<FilterMapMetadata>, FilterError> {
-        self.consistent_provider()?.get_metadata()
-    }
+// impl<N: ProviderNodeTypes> FilterMapsReader for BlockchainProvider<N> {
+//     fn get_metadata(&self) -> Result<Option<FilterMapMetadata>, FilterError> {
+//         self.consistent_provider()?.get_metadata()
+//     }
 
-    fn get_log_value_index_for_block(
-        &self,
-        block: BlockNumber,
-    ) -> Result<Option<u64>, FilterError> {
-        self.consistent_provider()?.get_log_value_index_for_block(block)
-    }
+//     fn get_log_value_index_for_block(
+//         &self,
+//         block: BlockNumber,
+//     ) -> Result<Option<u64>, FilterError> {
+//         self.consistent_provider()?.get_log_value_index_for_block(block)
+//     }
 
-    fn get_filter_map_rows(
-        &self,
-        global_row_indices: Vec<u64>,
-    ) -> Result<Option<HashMap<u64, FilterMapRow>>, FilterError> {
-        self.consistent_provider()?.get_filter_map_rows(global_row_indices)
-    }
-}
+//     fn get_filter_map_rows(
+//         &self,
+//         from_block: BlockNumber,
+//         to_block: BlockNumber,
+//         values: &[&B256],
+//     ) -> Result<FilterMapRowsResult, FilterError> {
+//         self.consistent_provider()?.get_filter_map_rows(from_block, to_block, values)
+//     }
+
+//     fn get_map_last_block(&self, map_index: u32) -> Result<LastBlockOfMap, FilterError> {
+//         self.consistent_provider()?.get_map_last_block(map_index)
+//     }
+// }
 
 #[cfg(test)]
 mod tests {

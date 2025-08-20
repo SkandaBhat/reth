@@ -19,7 +19,6 @@ use reth_chain_state::{BlockState, CanonicalInMemoryState, MemoryOverlayStatePro
 use reth_chainspec::ChainInfo;
 use reth_db_api::models::{AccountBeforeTx, BlockNumberAddress, StoredBlockBodyIndices};
 use reth_execution_types::{BundleStateInit, ExecutionOutcome, RevertsInit};
-use reth_log_index::{FilterError, FilterMapMetadata, FilterMapRow, FilterMapsReader};
 use reth_node_types::{BlockTy, HeaderTy, ReceiptTy, TxTy};
 use reth_primitives_traits::{Account, BlockBody, RecoveredBlock, SealedHeader, StorageEntry};
 use reth_prune_types::{PruneCheckpoint, PruneSegment};
@@ -1451,25 +1450,31 @@ impl<N: ProviderNodeTypes> StateReader for ConsistentProvider<N> {
     }
 }
 
-impl<N: ProviderNodeTypes> FilterMapsReader for ConsistentProvider<N> {
-    fn get_metadata(&self) -> Result<Option<FilterMapMetadata>, FilterError> {
-        self.storage_provider.get_metadata()
-    }
+// impl<N: ProviderNodeTypes> FilterMapsReader for ConsistentProvider<N> {
+//     fn get_metadata(&self) -> Result<Option<FilterMapMetadata>, FilterError> {
+//         self.storage_provider.get_metadata()
+//     }
 
-    fn get_filter_map_rows(
-        &self,
-        global_row_indices: Vec<u64>,
-    ) -> Result<Option<HashMap<u64, FilterMapRow>>, FilterError> {
-        self.storage_provider.get_filter_map_rows(global_row_indices)
-    }
+//     fn get_filter_map_rows(
+//         &self,
+//         from_block: BlockNumber,
+//         to_block: BlockNumber,
+//         values: &[&B256],
+//     ) -> Result<FilterMapRowsResult, FilterError> {
+//         self.storage_provider.get_filter_map_rows(from_block, to_block, values)
+//     }
 
-    fn get_log_value_index_for_block(
-        &self,
-        block: BlockNumber,
-    ) -> Result<Option<u64>, FilterError> {
-        self.storage_provider.get_log_value_index_for_block(block)
-    }
-}
+//     fn get_log_value_index_for_block(
+//         &self,
+//         block: BlockNumber,
+//     ) -> Result<Option<u64>, FilterError> {
+//         self.storage_provider.get_log_value_index_for_block(block)
+//     }
+
+//     fn get_map_last_block(&self, map_index: u32) -> Result<LastBlockOfMap, FilterError> {
+//         self.storage_provider.get_map_last_block(map_index)
+//     }
+// }
 
 #[cfg(test)]
 mod tests {

@@ -29,7 +29,7 @@ use crate::{
 use alloy_consensus::Header;
 use alloy_primitives::{Address, BlockHash, BlockNumber, TxHash, TxNumber, B256};
 use reth_ethereum_primitives::{Receipt, TransactionSigned};
-use reth_log_index::{FilterMapMetadata, FilterMapRow};
+use reth_log_index::FilterMapMeta;
 use reth_primitives_traits::{Account, Bytecode, StorageEntry};
 use reth_prune_types::{PruneCheckpoint, PruneSegment};
 use reth_stages_types::StageCheckpoint;
@@ -525,23 +525,37 @@ tables! {
         type Value = BlockNumber;
     }
 
-    /// Stores log filter rows for efficient log querying.
-    table LogFilterRows {
-        type Key = u64; // global row index
-        type Value = FilterMapRow;
-    }
+    // /// Base (layer-0) rows grouped by base_row_group_length for better locality.
+    // /// Key = mapRowIndex(group_start_map_index, row_index).
+    // table FilterMapBaseRows {
+    //     type Key   = u64;
+    //     type Value = FilterMapBaseRowGroup; // { rows: Vec<FilterMapRow> } len == base_row_group_length
+    // }
 
-    /// Maps block numbers to their starting log index.
-    table BlockLogIndices {
-        type Key = BlockNumber;
-        type Value = u64; // log value index
-    }
+    // /// Extended rows beyond base_row_length, per (mapIndex,rowIndex).
+    // /// Key = mapRowIndex(map_index, row_index).
+    // table FilterMapExtRows {
+    //     type Key   = u64;
+    //     type Value = FilterMapExtRow; // { columns: Vec<u32> } tail only; omit or empty if none
+    // }
 
-    /// Stores metadata for the log filtering system.
-    table LogFilterMetadata {
-        type Key = FilterMapMetadataKey;
-        type Value = FilterMapMetadata;
-    }
+    // /// Last block that contributed a log value into a map (for boundaries & consistency).
+    // table FilterMapLastBlocks {
+    //     type Key   = u32;            // map_index
+    //     type Value = BlockHash;
+    // }
+
+    // /// (unchanged) Block → first log value pointer (binary search by lvIndex).
+    // table BlockLogIndices {
+    //     type Key   = BlockNumber;
+    //     type Value = u64;
+    // }
+
+    // /// (unchanged) Misc filter map metadata (range, params, version/encoding).
+    // table LogFilterMetadata {
+    //     type Key   = FilterMapMetadataKey;
+    //     type Value = FilterMapMetadata;
+    // }
 }
 
 /// Keys for the `ChainState` table.
@@ -576,13 +590,13 @@ impl Decode for ChainStateKey {
 
 /// Key for filter map metadata
 #[derive(Ord, Clone, Eq, PartialOrd, PartialEq, Debug, Deserialize, Serialize, Hash, Default)]
-pub enum FilterMapMetadataKey {
+pub enum FilterMapMetaKey {
     /// Singleton key for the filter map metadata
     #[default]
     Metadata,
 }
 
-impl Encode for FilterMapMetadataKey {
+impl Encode for FilterMapMetaKey {
     type Encoded = [u8; 1];
 
     fn encode(self) -> Self::Encoded {
@@ -592,7 +606,7 @@ impl Encode for FilterMapMetadataKey {
     }
 }
 
-impl Decode for FilterMapMetadataKey {
+impl Decode for FilterMapMetaKey {
     fn decode(value: &[u8]) -> Result<Self, crate::DatabaseError> {
         match value {
             [0] => Ok(Self::Metadata),

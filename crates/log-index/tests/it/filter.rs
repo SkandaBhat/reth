@@ -1,13 +1,16 @@
 use std::{iter::StepBy, ops::RangeInclusive, sync::Arc};
 
+use crate::query::fetch_logs_from_index_result;
 use alloy_consensus::BlockHeader;
-use alloy_primitives::{Address, Log, B256};
+use alloy_primitives::Log;
 use alloy_rpc_types_eth::{BlockHashOrNumber, Filter};
-use reth_log_index::{FilterError, FilterMapsReader, FilterResult};
+use reth_log_index::{
+    query::query_logs_in_block_range, FilterMapParams, FilterMapsReader, FilterResult,
+};
 use reth_provider::{HeaderProvider, ReceiptProvider};
-use test_fuzz::runtime::num_traits::Saturating;
+use tracing::{info, trace};
 
-use crate::{query::get_log_at_index, storage::InMemoryFilterMapsProvider};
+use crate::storage::InMemoryFilterMapsProvider;
 
 const MAX_HEADERS_RANGE: u64 = 1_000; // with ~530bytes per header this is ~500kb
 
@@ -40,17 +43,14 @@ impl Iterator for BlockRangeInclusiveIter {
 
 pub async fn get_logs_in_block_range(
     provider: Arc<InMemoryFilterMapsProvider>,
-    filter: Filter,
+    filter: &Filter,
     from_block: u64,
     to_block: u64,
     force_bloom: bool,
 ) -> FilterResult<Vec<Log>> {
-    let addresses: Vec<Address> = filter.address.iter().copied().collect();
-    let topics: Vec<Vec<B256>> =
-        filter.topics.iter().map(|t| t.iter().copied().collect()).collect();
-
+    let params = FilterMapParams::default();
     if force_bloom {
-        return get_logs_in_block_range_bloom(provider, &filter, from_block, to_block).await;
+        return get_logs_in_block_range_bloom(provider, filter, from_block, to_block).await;
     }
 
     let metadata = provider.get_metadata()?.unwrap();
@@ -65,102 +65,60 @@ pub async fn get_logs_in_block_range(
             None
         };
 
-    // Calculate bloom ranges (intersection with indexed data)
-    let bloom_ranges = match &indexed_range {
+    let mut all_logs: Vec<Log> = Vec::new();
+
+    match indexed_range {
         Some(indexed) => {
-            let mut ranges = Vec::new();
+            let indexed_start = *indexed.start();
+            let indexed_end = *indexed.end();
+            // Process in chronological order:
 
-            if from_block < *indexed.start() {
-                ranges.push(from_block..=(indexed.start().saturating_sub(1)));
-            }
-
-            if to_block > *indexed.end() {
-                ranges.push((indexed.end().saturating_sub(1))..=to_block);
-            }
-
-            ranges
-        }
-        _ => vec![from_block..=to_block],
-    };
-    println!("bloom_ranges: {:?}", bloom_ranges);
-
-    // Fetch from index (if available)
-    let index_future = if let Some(range) = indexed_range {
-        Some(tokio::spawn(get_logs_from_indexed_range(provider.clone(), range, addresses, topics)))
-    } else {
-        None
-    };
-
-    // Fetch from bloom filters
-    let bloom_futures: Vec<_> = bloom_ranges
-        .into_iter()
-        .map(|range| {
-            let provider_clone = provider.clone();
-            let filter_clone = filter.clone();
-            tokio::spawn(async move {
-                get_logs_in_block_range_bloom(
-                    provider_clone,
-                    &filter_clone,
-                    *range.start(),
-                    *range.end(),
+            // 1. First bloom range (before indexed data)
+            if from_block < indexed_start {
+                let logs = get_logs_in_block_range_bloom(
+                    provider.clone(),
+                    filter,
+                    from_block,
+                    indexed_start.saturating_sub(1),
                 )
-                .await
-            })
-        })
-        .collect();
+                .await?;
+                all_logs.extend(logs);
+            }
 
-    // If we have an index future, add it to our list of futures to await
-    let mut all_futures = Vec::new();
+            // 2. Indexed range (middle)
+            let results = query_logs_in_block_range(
+                provider.clone(),
+                &params,
+                &filter,
+                indexed_start,
+                indexed_end - 1,
+            )?;
 
-    if let Some(index_future) = index_future {
-        all_futures.push(index_future);
+            for result in results {
+                info!("Fetched log from index: {:?}", result);
+                if let Some(log) = fetch_logs_from_index_result(provider.clone(), result)? {
+                    all_logs.push(log);
+                }
+            }
+
+            // 3. Second bloom range (after indexed data)
+            if to_block > indexed_end {
+                let logs =
+                    get_logs_in_block_range_bloom(provider.clone(), filter, indexed_end, to_block)
+                        .await?;
+                all_logs.extend(logs);
+            }
+        }
+        None => {
+            // No indexed data, use bloom for entire range
+            let logs =
+                get_logs_in_block_range_bloom(provider.clone(), filter, from_block, to_block)
+                    .await?;
+            all_logs.extend(logs);
+        }
     }
-
-    // Add all bloom futures
-    all_futures.extend(bloom_futures);
-
-    // Wait for all futures to complete
-    let results = futures::future::join_all(all_futures).await;
-
-    // Collect and flatten all logs
-    let mut all_logs = Vec::new();
-    for result in results {
-        let logs = result.map_err(|e| FilterError::Database(format!("Task error: {}", e)))?;
-        all_logs.extend(logs);
-    }
-
-    // flatten the logs
-    let all_logs = all_logs.into_iter().flatten().collect();
-    // TODO: should we sort the logs?
 
     Ok(all_logs)
-}
-
-async fn get_logs_from_indexed_range(
-    provider: Arc<InMemoryFilterMapsProvider>,
-    index_range: RangeInclusive<u64>,
-    addresses: Vec<Address>,
-    topics: Vec<Vec<B256>>,
-) -> FilterResult<Vec<Log>> {
-    let mut logs = Vec::new();
-
-    let map_indices = provider.get_map_indices_for_block_range(index_range.clone())?;
-    let log_indices = provider.query_logs(map_indices, addresses.clone(), topics)?;
-
-    let metadata = provider.get_metadata()?.unwrap();
-
-    for log_index in log_indices {
-        let log = get_log_at_index(provider.clone(), metadata, log_index, None);
-        if let Ok(Some(log)) = log {
-            if addresses.contains(&log.address) {
-                logs.push(log);
-            } else {
-                println!("log address mismatch: {:?}, {:?}", log.address, addresses);
-            }
-        }
-    }
-
-    Ok(logs)
 }
 
 async fn get_logs_in_block_range_bloom(

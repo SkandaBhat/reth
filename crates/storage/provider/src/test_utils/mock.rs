@@ -21,7 +21,7 @@ use reth_db_api::{
 use reth_ethereum_engine_primitives::EthEngineTypes;
 use reth_ethereum_primitives::EthPrimitives;
 use reth_execution_types::ExecutionOutcome;
-use reth_log_index::{FilterError, FilterMapMetadata, FilterMapRow, FilterMapsReader};
+use reth_log_index::{FilterError, FilterMapMeta, FilterMapsReader};
 use reth_node_types::NodeTypes;
 use reth_primitives_traits::{
     Account, Block, BlockBody, Bytecode, GotExpected, NodePrimitives, RecoveredBlock, SealedHeader,
@@ -68,12 +68,6 @@ pub struct MockEthProvider<T: NodePrimitives = EthPrimitives, ChainSpec = reth_c
     pub block_body_indices: Arc<Mutex<HashMap<BlockNumber, StoredBlockBodyIndices>>>,
     tx: TxMock,
     prune_modes: Arc<PruneModes>,
-    /// Local filter maps metadata
-    pub filter_maps_metadata: Arc<Mutex<Option<FilterMapMetadata>>>,
-    /// Local filter map rows
-    pub filter_map_rows: Arc<Mutex<HashMap<u64, FilterMapRow>>>,
-    /// Local block log value indices
-    pub block_log_value_indices: Arc<Mutex<HashMap<BlockNumber, u64>>>,
 }
 
 impl<T: NodePrimitives, ChainSpec> Clone for MockEthProvider<T, ChainSpec>
@@ -91,9 +85,6 @@ where
             block_body_indices: self.block_body_indices.clone(),
             tx: self.tx.clone(),
             prune_modes: self.prune_modes.clone(),
-            filter_maps_metadata: self.filter_maps_metadata.clone(),
-            filter_map_rows: self.filter_map_rows.clone(),
-            block_log_value_indices: self.block_log_value_indices.clone(),
         }
     }
 }
@@ -111,9 +102,6 @@ impl<T: NodePrimitives> MockEthProvider<T, reth_chainspec::ChainSpec> {
             block_body_indices: Default::default(),
             tx: Default::default(),
             prune_modes: Default::default(),
-            filter_maps_metadata: Default::default(),
-            filter_map_rows: Default::default(),
-            block_log_value_indices: Default::default(),
         }
     }
 }
@@ -198,9 +186,6 @@ impl<T: NodePrimitives, ChainSpec> MockEthProvider<T, ChainSpec> {
             block_body_indices: self.block_body_indices,
             tx: self.tx,
             prune_modes: self.prune_modes,
-            filter_maps_metadata: self.filter_maps_metadata,
-            filter_map_rows: self.filter_map_rows,
-            block_log_value_indices: self.block_log_value_indices,
         }
     }
 }
@@ -1039,42 +1024,48 @@ impl<T: NodePrimitives, ChainSpec: Send + Sync> NodePrimitivesProvider
     type Primitives = T;
 }
 
-impl<T: NodePrimitives, ChainSpec: Send + Sync> FilterMapsReader for MockEthProvider<T, ChainSpec> {
-    fn get_metadata(&self) -> Result<Option<FilterMapMetadata>, FilterError> {
-        Ok(self.filter_maps_metadata.lock().clone())
-    }
+// impl<T: NodePrimitives, ChainSpec: Send + Sync> FilterMapsReader for MockEthProvider<T,
+// ChainSpec> {     fn get_metadata(&self) -> Result<Option<FilterMapMetadata>, FilterError> {
+//         Ok(self.filter_maps_metadata.lock().clone())
+//     }
 
-    fn get_filter_map_rows(
-        &self,
-        global_row_indices: Vec<u64>,
-    ) -> Result<Option<HashMap<u64, FilterMapRow>>, FilterError> {
-        Ok(None)
-    }
+//     fn get_filter_map_rows(
+//         &self,
+//         _from_block: BlockNumber,
+//         _to_block: BlockNumber,
+//         _values: &[&B256],
+//     ) -> Result<FilterMapRowsResult, FilterError> {
+//         Ok(FilterMapRowsResult::default())
+//     }
 
-    fn get_log_value_index_for_block(
-        &self,
-        _block: BlockNumber,
-    ) -> Result<Option<u64>, FilterError> {
-        Ok(None)
-    }
-}
+//     fn get_log_value_index_for_block(
+//         &self,
+//         _block: BlockNumber,
+//     ) -> Result<Option<u64>, FilterError> {
+//         Ok(None)
+//     }
 
-impl<T: NodePrimitives, ChainSpec> MockEthProvider<T, ChainSpec> {
-    /// Set filter maps metadata for testing
-    pub fn set_filter_maps_metadata(&self, metadata: FilterMapMetadata) {
-        *self.filter_maps_metadata.lock() = Some(metadata);
-    }
+//     fn get_map_last_block(&self, _map_index: u32) -> Result<LastBlockOfMap, FilterError> {
+//         Ok(LastBlockOfMap::default())
+//     }
+// }
 
-    /// Add a filter map row for testing
-    pub fn add_filter_map_row(&self, index: u64, row: FilterMapRow) {
-        self.filter_map_rows.lock().insert(index, row);
-    }
+// impl<T: NodePrimitives, ChainSpec> MockEthProvider<T, ChainSpec> {
+//     /// Set filter maps metadata for testing
+//     pub fn set_filter_maps_metadata(&self, metadata: FilterMapMetadata) {
+//         *self.filter_maps_metadata.lock() = Some(metadata);
+//     }
 
-    /// Add a block log value index for testing
-    pub fn add_block_log_value_index(&self, block: BlockNumber, index: u64) {
-        self.block_log_value_indices.lock().insert(block, index);
-    }
-}
+//     /// Add a filter map row for testing
+//     pub fn add_filter_map_row(&self, index: u64, row: FilterMapRow) {
+//         self.filter_map_rows.lock().insert(index, row);
+//     }
+
+//     /// Add a block log value index for testing
+//     pub fn add_block_log_value_index(&self, block: BlockNumber, index: u64) {
+//         self.block_log_value_indices.lock().insert(block, index);
+//     }
+// }
 
 #[cfg(test)]
 mod tests {

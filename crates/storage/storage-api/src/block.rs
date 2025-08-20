@@ -54,7 +54,7 @@ pub trait BlockReader:
     + BlockBodyIndicesProvider
     + TransactionsProvider
     + ReceiptProvider
-    + FilterMapsReader
+    // + FilterMapsReader
     + Send
     + Sync
 {

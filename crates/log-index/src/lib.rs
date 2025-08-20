@@ -49,16 +49,15 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
-mod accumulator;
 mod constants;
+pub mod log_values;
 mod params;
 mod provider;
+pub mod query;
 mod types;
-mod utils;
+pub mod utils;
 
-pub use accumulator::{FilterMap, FilterMapAccumulator};
 pub use constants::{DEFAULT_PARAMS, EXPECTED_MATCHES, MAX_LAYERS, RANGE_TEST_PARAMS};
 pub use params::FilterMapParams;
-pub use provider::{FilterMapsReader, FilterMapsWriter};
+pub use provider::{FilterMapsReader, FilterMapsWriter, MapLastBlockNumHash, MapValueRows};
 pub use types::*;
-pub use utils::{address_value, extract_log_values_from_block, topic_value};

@@ -12,7 +12,7 @@ use futures::{future::TryFutureExt, StreamExt};
 use itertools::Itertools;
 use jsonrpsee::{core::RpcResult, server::IdProvider};
 use reth_errors::ProviderError;
-use reth_log_index::{address_value, topic_value, FilterMapMetadata, FilterMapsReader};
+use reth_log_index::{address_value, topic_value, FilterMapMeta, FilterMapsReader};
 use reth_primitives_traits::{BlockBody, NodePrimitives, SealedHeader};
 use reth_rpc_eth_api::{
     EngineEthFilter, EthApiTypes, EthFilterApiServer, FullEthApiTypes, QueryLimits, RpcConvert,
@@ -669,11 +669,18 @@ where
         limits: QueryLimits,
     ) -> Result<Vec<Log>, EthFilterError> {
         let provider = self.provider();
+        let self_clone = self.clone();
         // TODO: remove this once we have a better way to handle the setting
-        let force_bloom = false;
-        if force_bloom {
-            return self.get_logs_in_block_range_bloom(&filter, from_block, to_block, &limits).await;
-        }
+        // let logs =
+        //     self_clone.get_logs_in_block_range_bloom(&filter, from_block, to_block,
+        // &limits).await; if let Ok(logs) = logs {
+        //     info!(
+        //         target: "rpc::eth::filter",
+        //         "logs length {}",
+        //         logs.len()
+        //     );
+        // }
+
         let addresses: Vec<Address> = filter.address.iter().copied().collect();
         let topics: Vec<Vec<B256>> =
             filter.topics.iter().map(|t| t.iter().copied().collect()).collect();
@@ -793,7 +800,8 @@ where
             info!(
                 target: "rpc::eth::filter",
                 duration = duration.as_millis(),
-                "get_logs_at_indices duration"
+                "get_logs_at_indices duration, logs length {}",
+                logs.len()
             );
 
             logs
@@ -825,7 +833,7 @@ where
 
     async fn get_logs_at_indices(
         &self,
-        metadata: FilterMapMetadata,
+        metadata: FilterMapMeta,
         log_indices: Vec<u64>,
         range: Option<RangeInclusive<u64>>,
     ) -> Result<Vec<Log>, EthFilterError> {

@@ -1,6 +1,5 @@
-use crate::types::{BlockDelimiter, LogValue};
 use alloy_primitives::{Address, B256};
-use reth_primitives_traits::{AlloyBlockHeader, Block, BlockBody, Receipt, SignedTransaction};
+use reth_primitives_traits::Receipt;
 use sha2::{Digest, Sha256};
 
 /// Compute the log value hash of a log emitting address.
@@ -17,125 +16,29 @@ pub fn topic_value(topic: &B256) -> B256 {
     B256::from_slice(&hasher.finalize())
 }
 
-/// Extracts log values from a block.
+/// Count the log values in a block's receipts.
 ///
-/// This function extracts log values from a block and returns them as a vector of `LogValue`s.
+/// The log value count is the number of log values in a single block's receipts, which includes:
+/// - 1 for the address of each log
+/// - 1 for each topic in each log
+pub fn count_log_values_in_block<R: Receipt>(receipts: &[R]) -> u64 {
+    receipts.iter().fold(0, |acc, receipt| {
+        acc + receipt.logs().iter().fold(0, |log_acc, log| {
+            log_acc + 1 + log.topics().len() as u64 // 1 for address + topics count
+        })
+    })
+}
+
+/// Return an Iterator over all log values in a single block's receipts.
 ///
-/// # Arguments
-pub fn extract_log_values_from_block<B: Block, R: Receipt>(
-    block: B,
-    receipts: Vec<R>,
-) -> (BlockDelimiter, Vec<LogValue>) {
-    let mut log_values: Vec<LogValue> = Vec::new();
-    let header = block.header();
-    let block_number = header.number();
-    let parent_hash = header.parent_hash();
-    let parent_timestamp = header.timestamp();
-    let transactions = block.body().transactions();
-
-    // Add block delimiter
-    let delimiter =
-        BlockDelimiter { block_number, block_hash: parent_hash, timestamp: parent_timestamp };
-
-    // Add log values
-    for (tx_index, (receipt, transaction)) in receipts.iter().zip(transactions).enumerate() {
-        let transaction_hash = *transaction.tx_hash();
-        for (log_index, log) in receipt.logs().iter().enumerate() {
-            // Address value
-            let address_value = address_value(&log.address);
-            log_values.push(LogValue {
-                value: address_value,
-                transaction_hash,
-                block_number,
-                transaction_index: tx_index as u64,
-                log_in_tx_index: log_index as u64,
-            });
-
-            // Topic values
-            for topic in log.topics() {
-                let topic_value = topic_value(&topic);
-                log_values.push(LogValue {
-                    value: topic_value,
-                    transaction_hash,
-                    block_number,
-                    transaction_index: tx_index as u64,
-                    log_in_tx_index: log_index as u64,
-                });
-            }
-        }
-    }
-
-    (delimiter, log_values)
-}
-
-#[inline]
-pub fn union_sorted(a: &[u64], b: &[u64]) -> Vec<u64> {
-    let mut out = Vec::with_capacity(a.len() + b.len()); // upper bound
-    let (mut i, mut j) = (0, 0);
-    while i < a.len() && j < b.len() {
-        match a[i].cmp(&b[j]) {
-            core::cmp::Ordering::Less => {
-                out.push(a[i]);
-                i += 1;
-            }
-            core::cmp::Ordering::Greater => {
-                out.push(b[j]);
-                j += 1;
-            }
-            core::cmp::Ordering::Equal => {
-                out.push(a[i]);
-                i += 1;
-                j += 1;
-            }
-        }
-    }
-    if i < a.len() {
-        out.extend_from_slice(&a[i..]);
-    }
-    if j < b.len() {
-        out.extend_from_slice(&b[j..]);
-    }
-    out
-}
-
-#[inline]
-pub fn intersect_sorted(a: &[u64], b: &[u64]) -> Vec<u64> {
-    // Capacity heuristic: no more than smaller input
-    let mut out = Vec::with_capacity(a.len().min(b.len()));
-    let (mut i, mut j) = (0, 0);
-    while i < a.len() && j < b.len() {
-        match a[i].cmp(&b[j]) {
-            core::cmp::Ordering::Less => i += 1,
-            core::cmp::Ordering::Greater => j += 1,
-            core::cmp::Ordering::Equal => {
-                out.push(a[i]);
-                i += 1;
-                j += 1;
-            }
-        }
-    }
-    out
-}
-
-/// Shift matches back by `offset` and keep only those whose base is inside `map_index`.
-/// Input must be sorted; output remains sorted.
-#[inline]
-pub fn shift_filter_to_map(
-    sorted: &[u64],
-    offset: u64,
-    map_index: u64,
-    log_values_per_map: u64,
-) -> Vec<u64> {
-    let mut out = Vec::with_capacity(sorted.len());
-    let shift_bits = log_values_per_map; // 2^shift_bits = values_per_map
-    for &m in sorted {
-        if m < offset {
-            continue;
-        }
-        let base = m - offset;
-        if (base >> shift_bits) == map_index {
-            out.push(base);
-        }
-    }
-    out
+/// The log values include the address value and all topic values for each log in the block's
+/// receipts.
+pub fn log_values_from_receipts<'a, R: Receipt + 'a>(
+    receipts: &'a [R],
+) -> impl Iterator<Item = B256> + 'a {
+    receipts.iter().flat_map(|receipt| {
+        receipt.logs().iter().flat_map(|log| {
+            std::iter::once(address_value(&log.address)).chain(log.topics().iter().map(topic_value))
+        })
+    })
 }

@@ -34,7 +34,7 @@ use reth_db_api::{
     transaction::DbTx,
 };
 use reth_ethereum_primitives::{Receipt, TransactionSigned};
-use reth_log_index::{FilterError, FilterMapMetadata, FilterMapRow, FilterMapsReader};
+use reth_log_index::{FilterError, FilterMapMeta, FilterMapsReader};
 use reth_nippy_jar::{NippyJar, NippyJarChecker, CONFIG_FILE_EXTENSION};
 use reth_node_types::{FullNodePrimitives, NodePrimitives};
 use reth_primitives_traits::{RecoveredBlock, SealedHeader, SignedTransaction};
@@ -1828,24 +1828,30 @@ impl<N: NodePrimitives> StatsReader for StaticFileProvider<N> {
     }
 }
 
-impl<N: NodePrimitives> FilterMapsReader for StaticFileProvider<N> {
-    fn get_metadata(&self) -> Result<Option<FilterMapMetadata>, FilterError> {
-        Err(FilterError::Database("Unsupported provider".to_string()))
-    }
-    fn get_filter_map_rows(
-        &self,
-        _global_row_indices: Vec<u64>,
-    ) -> Result<Option<alloy_primitives::map::HashMap<u64, FilterMapRow>>, FilterError> {
-        Err(FilterError::Database("Unsupported provider".to_string()))
-    }
+// impl<N: NodePrimitives> FilterMapsReader for StaticFileProvider<N> {
+//     fn get_metadata(&self) -> Result<Option<FilterMapMetadata>, FilterError> {
+//         Err(FilterError::Database("Unsupported provider".to_string()))
+//     }
+//     fn get_filter_map_rows(
+//         &self,
+//         _from_block: BlockNumber,
+//         _to_block: BlockNumber,
+//         _values: &[&B256],
+//     ) -> Result<FilterMapRowsResult, FilterError> {
+//         Err(FilterError::Database("Unsupported provider".to_string()))
+//     }
 
-    fn get_log_value_index_for_block(
-        &self,
-        _block: BlockNumber,
-    ) -> Result<Option<u64>, FilterError> {
-        Err(FilterError::Database("Unsupported provider".to_string()))
-    }
-}
+//     fn get_log_value_index_for_block(
+//         &self,
+//         _block: BlockNumber,
+//     ) -> Result<Option<u64>, FilterError> {
+//         Err(FilterError::Database("Unsupported provider".to_string()))
+//     }
+
+//     fn get_map_last_block(&self, _map_index: u32) -> Result<LastBlockOfMap, FilterError> {
+//         Err(FilterError::Database("Unsupported provider".to_string()))
+//     }
+// }
 
 /// Calculates the tx hash for the given transaction and its id.
 #[inline]

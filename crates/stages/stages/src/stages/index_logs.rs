@@ -6,7 +6,7 @@ use reth_config::config::IndexLogsConfig;
 use reth_db::{tables, DbTxUnwindExt};
 use reth_db_api::transaction::DbTxMut;
 use reth_log_index::{
-    extract_log_values_from_block, FilterMapAccumulator, FilterMapMetadata, FilterMapParams,
+    extract_log_values_from_block, FilterMapAccumulator, FilterMapMeta, FilterMapParams,
     FilterMapsReader, FilterMapsWriter,
 };
 use reth_provider::{BlockReader, DBProvider, ReceiptProvider};
@@ -210,22 +210,23 @@ where
 
         let last_indexed_block = map_first_block_number.saturating_sub(1);
 
-        // Delete all rows from maps > maps_to_keep
-        provider
-            .tx_ref()
-            .unwind_table::<tables::LogFilterRows, _>(maps_to_keep, |global_row_index| {
-                global_row_index / self.params.map_height()
-            })?;
+        // TODO: uncomment this when we have a way to delete rows from the database
+        // // Delete all rows from maps > maps_to_keep
+        // provider
+        //     .tx_ref()
+        //     .unwind_table::<tables::FilterMapBaseRowGroup, _>(maps_to_keep, |global_row_index| {
+        //         global_row_index / self.params.map_height()
+        //     })?;
 
-        let new_metadata = FilterMapMetadata {
-            first_indexed_block: metadata.first_indexed_block,
-            last_indexed_block,
-            first_map_index: metadata.first_map_index,
-            last_map_index: unwind_map_index.saturating_sub(1),
-            next_log_value_index: unwind_map_index << self.params.log_values_per_map,
-        };
+        // let new_metadata = FilterMapMetadata {
+        //     first_indexed_block: metadata.first_indexed_block,
+        //     last_indexed_block,
+        //     first_map_index: metadata.first_map_index,
+        //     last_map_index: unwind_map_index.saturating_sub(1),
+        //     next_log_value_index: unwind_map_index << self.params.log_values_per_map,
+        // };
 
-        provider.store_metadata(new_metadata).map_err(|e| StageError::Fatal(Box::new(e)))?;
+        // provider.store_metadata(new_metadata).map_err(|e| StageError::Fatal(Box::new(e)))?;
 
         Ok(UnwindOutput { checkpoint: StageCheckpoint::new(unwind_to) })
     }
