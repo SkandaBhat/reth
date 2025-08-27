@@ -21,6 +21,7 @@ use reth_db_api::{
 use reth_ethereum_engine_primitives::EthEngineTypes;
 use reth_ethereum_primitives::EthPrimitives;
 use reth_execution_types::ExecutionOutcome;
+use reth_log_index::{FilterError, FilterMapMeta, FilterMapsReader};
 use reth_node_types::NodeTypes;
 use reth_primitives_traits::{
     Account, Block, BlockBody, Bytecode, GotExpected, NodePrimitives, RecoveredBlock, SealedHeader,
@@ -433,7 +434,7 @@ impl<T: NodePrimitives, ChainSpec: EthChainSpec + 'static> TransactionsProvider
                         excess_blob_gas: block.header().excess_blob_gas(),
                         timestamp: block.header().timestamp(),
                     };
-                    return Ok(Some((tx.clone(), meta)))
+                    return Ok(Some((tx.clone(), meta)));
                 }
             }
         }
@@ -445,7 +446,7 @@ impl<T: NodePrimitives, ChainSpec: EthChainSpec + 'static> TransactionsProvider
         let mut current_tx_number: TxNumber = 0;
         for block in lock.values() {
             if current_tx_number + (block.body().transaction_count() as TxNumber) > id {
-                return Ok(Some(block.header().number()))
+                return Ok(Some(block.header().number()));
             }
             current_tx_number += block.body().transaction_count() as TxNumber;
         }
@@ -1022,6 +1023,49 @@ impl<T: NodePrimitives, ChainSpec: Send + Sync> NodePrimitivesProvider
 {
     type Primitives = T;
 }
+
+// impl<T: NodePrimitives, ChainSpec: Send + Sync> FilterMapsReader for MockEthProvider<T,
+// ChainSpec> {     fn get_metadata(&self) -> Result<Option<FilterMapMetadata>, FilterError> {
+//         Ok(self.filter_maps_metadata.lock().clone())
+//     }
+
+//     fn get_filter_map_rows(
+//         &self,
+//         _from_block: BlockNumber,
+//         _to_block: BlockNumber,
+//         _values: &[&B256],
+//     ) -> Result<FilterMapRowsResult, FilterError> {
+//         Ok(FilterMapRowsResult::default())
+//     }
+
+//     fn get_log_value_index_for_block(
+//         &self,
+//         _block: BlockNumber,
+//     ) -> Result<Option<u64>, FilterError> {
+//         Ok(None)
+//     }
+
+//     fn get_map_last_block(&self, _map_index: u32) -> Result<LastBlockOfMap, FilterError> {
+//         Ok(LastBlockOfMap::default())
+//     }
+// }
+
+// impl<T: NodePrimitives, ChainSpec> MockEthProvider<T, ChainSpec> {
+//     /// Set filter maps metadata for testing
+//     pub fn set_filter_maps_metadata(&self, metadata: FilterMapMetadata) {
+//         *self.filter_maps_metadata.lock() = Some(metadata);
+//     }
+
+//     /// Add a filter map row for testing
+//     pub fn add_filter_map_row(&self, index: u64, row: FilterMapRow) {
+//         self.filter_map_rows.lock().insert(index, row);
+//     }
+
+//     /// Add a block log value index for testing
+//     pub fn add_block_log_value_index(&self, block: BlockNumber, index: u64) {
+//         self.block_log_value_indices.lock().insert(block, index);
+//     }
+// }
 
 #[cfg(test)]
 mod tests {

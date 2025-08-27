@@ -14,7 +14,9 @@ use alloy_eips::{
     eip4895::{Withdrawal, Withdrawals},
     BlockHashOrNumber, BlockId, BlockNumHash, BlockNumberOrTag,
 };
-use alloy_primitives::{Address, BlockHash, BlockNumber, Sealable, TxHash, TxNumber, B256, U256};
+use alloy_primitives::{
+    map::HashMap, Address, BlockHash, BlockNumber, Sealable, TxHash, TxNumber, B256, U256,
+};
 use alloy_rpc_types_engine::ForkchoiceState;
 use reth_chain_state::{
     BlockState, CanonicalInMemoryState, ForkChoiceNotifications, ForkChoiceSubscriptions,
@@ -29,6 +31,7 @@ use reth_db_api::{
 use reth_ethereum_primitives::{Block, EthPrimitives, Receipt, TransactionSigned};
 use reth_evm::{ConfigureEvm, EvmEnv};
 use reth_execution_types::ExecutionOutcome;
+use reth_log_index::{FilterError, FilterMapMeta, FilterMapsReader};
 use reth_node_types::{BlockTy, HeaderTy, NodeTypesWithDB, ReceiptTy, TxTy};
 use reth_primitives_traits::{
     Account, BlockBody, NodePrimitives, RecoveredBlock, SealedBlock, SealedHeader, StorageEntry,
@@ -740,6 +743,32 @@ impl<N: ProviderNodeTypes> StateReader for BlockchainProvider<N> {
         StateReader::get_state(&self.consistent_provider()?, block)
     }
 }
+
+// impl<N: ProviderNodeTypes> FilterMapsReader for BlockchainProvider<N> {
+//     fn get_metadata(&self) -> Result<Option<FilterMapMetadata>, FilterError> {
+//         self.consistent_provider()?.get_metadata()
+//     }
+
+//     fn get_log_value_index_for_block(
+//         &self,
+//         block: BlockNumber,
+//     ) -> Result<Option<u64>, FilterError> {
+//         self.consistent_provider()?.get_log_value_index_for_block(block)
+//     }
+
+//     fn get_filter_map_rows(
+//         &self,
+//         from_block: BlockNumber,
+//         to_block: BlockNumber,
+//         values: &[&B256],
+//     ) -> Result<FilterMapRowsResult, FilterError> {
+//         self.consistent_provider()?.get_filter_map_rows(from_block, to_block, values)
+//     }
+
+//     fn get_map_last_block(&self, map_index: u32) -> Result<LastBlockOfMap, FilterError> {
+//         self.consistent_provider()?.get_map_last_block(map_index)
+//     }
+// }
 
 #[cfg(test)]
 mod tests {

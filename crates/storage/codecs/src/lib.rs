@@ -175,7 +175,7 @@ macro_rules! impl_uint_compact {
     };
 }
 
-impl_uint_compact!(u8, u64, u128);
+impl_uint_compact!(u8, u64, u32, u128);
 
 impl<T> Compact for Vec<T>
 where
@@ -658,6 +658,24 @@ mod tests {
         assert_eq!(0xffffffffffffffffu64.to_compact(&mut buf), 8);
         assert_eq!(&buf, &[0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]);
         assert_eq!(u64::from_compact(&buf, 8), (0xffffffffffffffffu64, vec![].as_slice()));
+    }
+
+    #[test]
+    fn compact_u32() {
+        let mut buf = vec![];
+
+        assert_eq!(0u32.to_compact(&mut buf), 0);
+        assert!(buf.is_empty());
+        assert_eq!(u32::from_compact(&buf, 0), (0u32, vec![].as_slice()));
+
+        assert_eq!(2u32.to_compact(&mut buf), 1);
+        assert_eq!(buf.last().unwrap(), &2u8);
+        assert_eq!(u32::from_compact(&buf[buf.len() - 1..], 1), (2u32, [].as_slice()));
+
+        let mut buf = Vec::with_capacity(4);
+        assert_eq!(0xffffffffu32.to_compact(&mut buf), 4);
+        assert_eq!(&buf, &[0xff, 0xff, 0xff, 0xff]);
+        assert_eq!(u32::from_compact(&buf, 4), (0xffffffffu32, [].as_slice()));
     }
 
     #[test]

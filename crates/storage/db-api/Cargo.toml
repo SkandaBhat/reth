@@ -21,6 +21,7 @@ reth-stages-types = { workspace = true, features = ["serde", "reth-codec"] }
 reth-prune-types = { workspace = true, features = ["serde", "reth-codec"] }
 reth-storage-errors.workspace = true
 reth-trie-common.workspace = true
+reth-log-index = { workspace = true, features = ["reth-codecs"] }
 
 # ethereum
 alloy-primitives.workspace = true

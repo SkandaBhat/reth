@@ -6,6 +6,7 @@ use alloc::{sync::Arc, vec::Vec};
 use alloy_eips::{BlockHashOrNumber, BlockId, BlockNumberOrTag};
 use alloy_primitives::{BlockNumber, B256};
 use core::ops::RangeInclusive;
+use reth_log_index::FilterMapsReader;
 use reth_primitives_traits::{RecoveredBlock, SealedHeader};
 use reth_storage_errors::provider::ProviderResult;
 
@@ -53,6 +54,7 @@ pub trait BlockReader:
     + BlockBodyIndicesProvider
     + TransactionsProvider
     + ReceiptProvider
+    // + FilterMapsReader
     + Send
     + Sync
 {

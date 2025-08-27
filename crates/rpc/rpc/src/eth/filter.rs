@@ -1,17 +1,19 @@
 //! `eth_` `Filter` RPC handler implementation
 
-use alloy_consensus::BlockHeader;
-use alloy_primitives::{Sealable, TxHash};
+use alloy_consensus::{BlockHeader, TxReceipt};
+use alloy_eips::Encodable2718;
+use alloy_primitives::{Address, Sealable, TxHash, B256};
 use alloy_rpc_types_eth::{
     BlockNumHash, Filter, FilterBlockOption, FilterChanges, FilterId, Log,
     PendingTransactionFilterKind,
 };
 use async_trait::async_trait;
-use futures::future::TryFutureExt;
+use futures::{future::TryFutureExt, StreamExt};
 use itertools::Itertools;
 use jsonrpsee::{core::RpcResult, server::IdProvider};
 use reth_errors::ProviderError;
-use reth_primitives_traits::{NodePrimitives, SealedHeader};
+use reth_log_index::{address_value, topic_value, FilterMapMeta, FilterMapsReader};
+use reth_primitives_traits::{BlockBody, NodePrimitives, SealedHeader};
 use reth_rpc_eth_api::{
     EngineEthFilter, EthApiTypes, EthFilterApiServer, FullEthApiTypes, QueryLimits, RpcConvert,
     RpcNodeCoreExt, RpcTransaction,
@@ -22,13 +24,13 @@ use reth_rpc_eth_types::{
 };
 use reth_rpc_server_types::{result::rpc_error_with_code, ToRpcResult};
 use reth_storage_api::{
-    BlockHashReader, BlockIdReader, BlockNumReader, BlockReader, HeaderProvider, ProviderBlock,
-    ProviderReceipt, ReceiptProvider,
+    BlockBodyIndicesProvider, BlockHashReader, BlockIdReader, BlockNumReader, BlockReader,
+    HeaderProvider, ProviderBlock, ProviderReceipt, ReceiptProvider, TransactionsProvider,
 };
 use reth_tasks::TaskSpawner;
 use reth_transaction_pool::{NewSubpoolTransactionStream, PoolTransaction, TransactionPool};
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{BTreeMap, HashMap, VecDeque},
     fmt,
     future::Future,
     iter::{Peekable, StepBy},
@@ -40,7 +42,7 @@ use tokio::{
     sync::{mpsc::Receiver, oneshot, Mutex},
     time::MissedTickBehavior,
 };
-use tracing::{debug, error, trace};
+use tracing::{debug, error, info, trace};
 
 impl<Eth> EngineEthFilter for EthFilter<Eth>
 where
@@ -217,7 +219,7 @@ where
 
             if filter.block > best_number {
                 // no new blocks since the last poll
-                return Ok(FilterChanges::Empty)
+                return Ok(FilterChanges::Empty);
             }
 
             // update filter
@@ -291,7 +293,7 @@ where
                 *filter.clone()
             } else {
                 // Not a log filter
-                return Err(EthFilterError::FilterNotFound(id))
+                return Err(EthFilterError::FilterNotFound(id));
             }
         };
 
@@ -311,7 +313,7 @@ where
 #[async_trait]
 impl<Eth> EthFilterApiServer<RpcTransaction<Eth::NetworkTypes>> for EthFilter<Eth>
 where
-    Eth: FullEthApiTypes + RpcNodeCoreExt + 'static,
+    Eth: FullEthApiTypes + RpcNodeCoreExt<Provider: BlockIdReader> + 'static,
 {
     /// Handler for `eth_newFilter`
     async fn new_filter(&self, filter: Filter) -> RpcResult<FilterId> {
@@ -544,40 +546,32 @@ where
 
         // perform boundary checks first
         if to_block < from_block {
-            return Err(EthFilterError::InvalidBlockRangeParams)
+            return Err(EthFilterError::InvalidBlockRangeParams);
         }
 
         if let Some(max_blocks_per_filter) =
             limits.max_blocks_per_filter.filter(|limit| to_block - from_block > *limit)
         {
-            return Err(EthFilterError::QueryExceedsMaxBlocks(max_blocks_per_filter))
+            return Err(EthFilterError::QueryExceedsMaxBlocks(max_blocks_per_filter));
         }
 
         let (tx, rx) = oneshot::channel();
         let this = self.clone();
         self.task_spawner.spawn_blocking(Box::pin(async move {
             let res =
-                this.get_logs_in_block_range_inner(&filter, from_block, to_block, limits).await;
+                this.get_logs_in_block_range_inner(from_block, to_block, &filter, limits).await;
             let _ = tx.send(res);
         }));
 
         rx.await.map_err(|_| EthFilterError::InternalError)?
     }
 
-    /// Returns all logs in the given _inclusive_ range that match the filter
-    ///
-    /// Note: This function uses a mix of blocking db operations for fetching indices and header
-    /// ranges and utilizes the rpc cache for optimistically fetching receipts and blocks.
-    /// This function is considered blocking and should thus be spawned on a blocking task.
-    ///
-    /// Returns an error if:
-    ///  - underlying database error
-    async fn get_logs_in_block_range_inner(
+    async fn get_logs_in_block_range_bloom(
         self: Arc<Self>,
         filter: &Filter,
         from_block: u64,
         to_block: u64,
-        limits: QueryLimits,
+        limits: &QueryLimits,
     ) -> Result<Vec<Log>, EthFilterError> {
         let mut all_logs = Vec::new();
         let mut matching_headers = Vec::new();
@@ -595,7 +589,7 @@ where
 
             while let Some(header) = headers_iter.next() {
                 if !filter.matches_bloom(header.logs_bloom()) {
-                    continue
+                    continue;
                 }
 
                 let current_number = header.number();
@@ -664,6 +658,331 @@ where
             }
         }
 
+        Ok(all_logs)
+    }
+
+    async fn get_logs_in_block_range_inner(
+        self: Arc<Self>,
+        from_block: u64,
+        to_block: u64,
+        filter: &Filter,
+        limits: QueryLimits,
+    ) -> Result<Vec<Log>, EthFilterError> {
+        let provider = self.provider();
+        let self_clone = self.clone();
+        // TODO: remove this once we have a better way to handle the setting
+        // let logs =
+        //     self_clone.get_logs_in_block_range_bloom(&filter, from_block, to_block,
+        // &limits).await; if let Ok(logs) = logs {
+        //     info!(
+        //         target: "rpc::eth::filter",
+        //         "logs length {}",
+        //         logs.len()
+        //     );
+        // }
+
+        let addresses: Vec<Address> = filter.address.iter().copied().collect();
+        let topics: Vec<Vec<B256>> =
+            filter.topics.iter().map(|t| t.iter().copied().collect()).collect();
+
+        let addr_vals: Vec<B256> =
+            addresses.iter().map(|address| address_value(&address)).collect();
+
+        let constrained_topic_values: Vec<(usize, Vec<B256>)> = topics
+            .iter()
+            .enumerate()
+            .filter_map(|(i, vals)| {
+                if vals.is_empty() {
+                    None
+                } else {
+                    Some((i, vals.iter().map(|v| topic_value(v)).collect()))
+                }
+            })
+            .collect();
+
+        if addr_vals.is_empty() && constrained_topic_values.is_empty() {
+            return Err(EthFilterError::InternalError);
+        }
+
+        let metadata = provider.get_metadata().map_err(|_| EthFilterError::InternalError)?;
+        let metadata = metadata.unwrap();
+
+        let indexed_range = if from_block <= metadata.last_indexed_block &&
+            to_block >= metadata.first_indexed_block
+        {
+            Some(
+                from_block.max(metadata.first_indexed_block)..=
+                    to_block.min(metadata.last_indexed_block),
+            )
+        } else {
+            None
+        };
+        // Calculate bloom ranges (intersection with indexed data)
+        let bloom_ranges = match &indexed_range {
+            Some(indexed) => {
+                let mut ranges = Vec::new();
+
+                if from_block < *indexed.start() {
+                    ranges.push(from_block..=(indexed.start().saturating_sub(1)));
+                }
+
+                if to_block > *indexed.end() {
+                    ranges.push((indexed.end().saturating_sub(1))..=to_block);
+                }
+
+                ranges
+            }
+            _ => vec![from_block..=to_block],
+        };
+
+        let mut indexed_logs = if let Some(ref index_range) = indexed_range {
+            let map_indices = provider
+                .get_map_indices_for_block_range(index_range.clone())
+                .map_err(|_| EthFilterError::InternalError)
+                .unwrap();
+
+            // split the map indices into chunks to parallelize the queries
+            let chunk_size = std::cmp::max(map_indices.len() / DEFAULT_PARALLEL_CONCURRENCY, 1);
+            let map_indices_chunks = map_indices
+                .into_iter()
+                .chunks(chunk_size)
+                .into_iter()
+                .map(|chunk| chunk.collect::<Vec<_>>())
+                .collect::<Vec<_>>();
+
+            let mut tasks = Vec::new();
+
+            for chunk in map_indices_chunks {
+                let provider_clone = provider.clone();
+                let addr_vals_clone = addr_vals.clone();
+                let constrained_topic_values_clone = constrained_topic_values.clone();
+
+                let task = tokio::spawn(async move {
+                    let log_indices = provider_clone
+                        .query_maps(chunk, &addr_vals_clone, &constrained_topic_values_clone)
+                        .map_err(|_| EthFilterError::InternalError)?;
+                    Ok::<Vec<u64>, EthFilterError>(log_indices)
+                });
+
+                tasks.push(task);
+            }
+
+            let start_time = Instant::now();
+            let results = futures::future::join_all(tasks).await;
+            let mut all_log_indices: Vec<u64> = Vec::new();
+            for result in results {
+                match result {
+                    Ok(Ok(log_indices)) => {
+                        all_log_indices.extend(log_indices);
+                    }
+                    Ok(Err(_)) => {
+                        return Err(EthFilterError::InternalError);
+                    }
+                    Err(_) => {
+                        return Err(EthFilterError::InternalError);
+                    }
+                }
+            }
+            let end_time = Instant::now();
+            let duration = end_time.duration_since(start_time);
+            info!(
+                target: "rpc::eth::filter",
+                duration = duration.as_millis(),
+                "query_map loop duration"
+            );
+
+            let start_time = Instant::now();
+            let logs = self
+                .get_logs_at_indices(metadata, all_log_indices, Some(from_block..=to_block))
+                .await?;
+            let end_time = Instant::now();
+            let duration = end_time.duration_since(start_time);
+            info!(
+                target: "rpc::eth::filter",
+                duration = duration.as_millis(),
+                "get_logs_at_indices duration, logs length {}",
+                logs.len()
+            );
+
+            logs
+        } else {
+            info!(
+                target: "rpc::eth::filter",
+                "No indexed range found"
+            );
+            vec![]
+        };
+
+        // fetch the logs from the bloom ranges
+        let mut bloom_logs = Vec::new();
+        for range in bloom_ranges {
+            let logs = self
+                .clone()
+                .get_logs_in_block_range_bloom(&filter, *range.start(), *range.end(), &limits)
+                .await;
+            if let Ok(logs) = logs {
+                bloom_logs.push(logs);
+            }
+        }
+
+        // merge the logs
+        indexed_logs.extend(bloom_logs.into_iter().flatten());
+
+        Ok(indexed_logs)
+    }
+
+    async fn get_logs_at_indices(
+        &self,
+        metadata: FilterMapMeta,
+        log_indices: Vec<u64>,
+        range: Option<RangeInclusive<u64>>,
+    ) -> Result<Vec<Log>, EthFilterError> {
+        if log_indices.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut log_indices_by_block: BTreeMap<u64, (u64, Vec<u64>)> = BTreeMap::new();
+
+        for log_index in log_indices {
+            if let Ok(Some((block_number, block_start_log_value_index))) =
+                self.provider().find_block_for_log_value_index(metadata, log_index, range.clone())
+            {
+                log_indices_by_block
+                    .entry(block_number)
+                    .or_insert_with(|| (block_start_log_value_index, Vec::new()))
+                    .1
+                    .push(log_index);
+            }
+        }
+
+        let start_block =
+            log_indices_by_block.keys().min().unwrap_or(range.as_ref().unwrap().start());
+        let end_block = log_indices_by_block.keys().max().unwrap_or(range.as_ref().unwrap().end());
+
+        let sealed_headers = self
+            .provider()
+            .sealed_headers_range(*start_block..=*end_block)?
+            .into_iter()
+            .map(|sealed_header| (sealed_header.number(), sealed_header))
+            .collect::<BTreeMap<_, _>>();
+
+        let mut block_hash_to_number = HashMap::new();
+        let mut block_hashes = Vec::new();
+        for (&block_number, sealed_header) in &sealed_headers {
+            if !log_indices_by_block.contains_key(&block_number) {
+                continue;
+            }
+
+            let hash = if let Some(next_sealed_header) = sealed_headers.get(&(block_number + 1)) {
+                next_sealed_header.parent_hash()
+            } else {
+                sealed_header.hash()
+            };
+            block_hash_to_number.insert(hash, block_number);
+            block_hashes.push(hash);
+        }
+
+        let mut receipts_maybe_blocks_stream =
+            self.eth_cache().get_receipts_and_maybe_block_stream(block_hashes.clone()).enumerate();
+
+        // Process each block
+        let mut all_logs = Vec::new();
+
+        while let Some((index, result)) = receipts_maybe_blocks_stream.next().await {
+            if let Ok(Some((receipts, maybe_block))) = result {
+                let block_hash = block_hashes[index];
+
+                let block_number = block_hash_to_number.get(&block_hash).unwrap();
+
+                let log_indices_by_block_entry = log_indices_by_block.get(block_number);
+
+                if log_indices_by_block_entry.is_none() {
+                    error!(
+                        target: "rpc::eth::filter",
+                        "log_indices_by_block_entry not found for block {}",
+                        block_number
+                    );
+                }
+
+                let (block_start_log_value_index, log_indices) =
+                    log_indices_by_block_entry.unwrap();
+
+                let timestamp = sealed_headers.get(block_number).unwrap().timestamp();
+
+                // build once per block
+                let mut log_value_index_map = HashMap::new();
+                let mut log_value_index_cursor = block_start_log_value_index + 1; // +1 because the first log value index is the delimiter
+                let mut block_log_index = 0;
+
+                for (receipt_index, receipt) in receipts.iter().enumerate() {
+                    for log in receipt.logs().iter() {
+                        log_value_index_map
+                            .insert(log_value_index_cursor, (receipt_index, log, block_log_index));
+                        log_value_index_cursor += 1 + log.topics().len() as u64;
+                        block_log_index += 1;
+                    }
+                }
+
+                for log_index in log_indices {
+                    // Lazy loaded number of the first transaction in the block.
+                    // This is useful for blocks with multiple matching logs because it
+                    // prevents re-querying the block body indices.
+                    let mut loaded_first_tx_num = None;
+                    if let Some((receipt_index, log, block_log_index)) =
+                        log_value_index_map.get(&log_index)
+                    {
+                        let transaction_hash = match maybe_block.clone() {
+                            Some(block) => block
+                                .body()
+                                .transactions()
+                                .get(*receipt_index)
+                                .map(|tx| tx.trie_hash()),
+                            None => {
+                                let first_tx_num = match loaded_first_tx_num {
+                                    Some(num) => num,
+                                    None => {
+                                        let block_body_indices = self
+                                            .provider()
+                                            .block_body_indices(*block_number)?
+                                            .ok_or(ProviderError::BlockBodyIndicesNotFound(
+                                                *block_number,
+                                            ))?;
+                                        loaded_first_tx_num = Some(block_body_indices.first_tx_num);
+                                        block_body_indices.first_tx_num
+                                    }
+                                };
+
+                                // This is safe because Transactions and Receipts have the same
+                                // keys.
+                                let transaction_id = first_tx_num + *receipt_index as u64;
+                                let transaction = self
+                                    .provider()
+                                    .transaction_by_id(transaction_id)?
+                                    .ok_or_else(|| {
+                                        ProviderError::TransactionNotFound(transaction_id.into())
+                                    })?;
+
+                                Some(transaction.trie_hash())
+                            }
+                        };
+
+                        // let timestamp = maybe_block.as_ref().unwrap().timestamp();
+                        let log = Log {
+                            inner: (*log).clone(),
+                            block_number: Some(*block_number),
+                            block_timestamp: Some(timestamp),
+                            transaction_hash,
+                            transaction_index: Some(*receipt_index as u64),
+                            log_index: Some(*block_log_index as u64),
+                            removed: false,
+                            block_hash: Some(block_hash),
+                        };
+                        all_logs.push(log);
+                        break;
+                    }
+                }
+            }
+        }
         Ok(all_logs)
     }
 }
@@ -820,7 +1139,7 @@ impl Iterator for BlockRangeInclusiveIter {
         let start = self.iter.next()?;
         let end = (start + self.step).min(self.end);
         if start > end {
-            return None
+            return None;
         }
         Some((start, end))
     }

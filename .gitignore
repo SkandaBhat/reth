@@ -72,3 +72,4 @@ __pycache__/
 # direnv
 .envrc
 .direnv/
+datadir
